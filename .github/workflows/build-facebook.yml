@@ -34,8 +34,21 @@ jobs:
       - name: Checkout binary repo (this)
         uses: actions/checkout@v4
 
-      - name: Select Xcode 26.4.1
-        run: sudo xcode-select -s /Applications/Xcode_26.4.1.app
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          # macos-15 runner ships several Xcode versions in /Applications/.
+          # Prefer the latest 26.x (matches Cambly-Swift's .xcode-version 26.4.1
+          # generation); fall back to whatever the latest installed Xcode is.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
 
       - name: Build all xcframeworks via Makefile
         # CI clones the Cambly fork over HTTPS using SOURCE_REPO_TOKEN (no SSH
