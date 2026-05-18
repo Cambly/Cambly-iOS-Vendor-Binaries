@@ -1,0 +1,92 @@
+name: Build Facebook
+
+# Manual trigger only. To cut a new Facebook release:
+#   Actions → Build Facebook → Run workflow → (set version) → Run.
+#
+# Produces a GitHub Release tagged `facebook-<version>` containing the 6
+# xcframework zips that make up the FacebookLogin product. Then patches
+# Package.swift's `// === facebook ===` section with the new urls + checksums
+# and commits it to main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag/ref on Cambly/facebook-ios-sdk (e.g. v11.0.1-cambly)"
+        required: true
+        type: string
+        default: v11.0.1-cambly
+
+permissions:
+  contents: write   # commit Package.swift + create release + upload assets
+
+# Serialize all build-*.yml workflows. Without this, two concurrent runs would
+# race on `git push origin main` (one wins, the other fails to push). Vendor
+# builds are slow (15-30 min) but rare, so queuing is fine.
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26.4.1
+        run: sudo xcode-select -s /Applications/Xcode_26.4.1.app
+
+      - name: Build all xcframeworks via Makefile
+        # CI clones the Cambly fork over HTTPS using SOURCE_REPO_TOKEN (no SSH
+        # keys on the macos-15 runner). Local devs use the SSH default in the
+        # Makefile.
+        run: |
+          make all VENDOR=facebook VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://x-access-token:${{ secrets.SOURCE_REPO_TOKEN }}@github.com/Cambly/facebook-ios-sdk.git
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: facebook
+          ASSETS_TAG: facebook-${{ inputs.version }}
+          FBSDKCoreKit_Basics_SHA: ${{ steps.checksums.outputs.FBSDKCoreKit_Basics_sha }}
+          LegacyCoreKit_SHA:       ${{ steps.checksums.outputs.LegacyCoreKit_sha }}
+          FacebookCore_SHA:        ${{ steps.checksums.outputs.FacebookCore_sha }}
+          FBSDKCoreKit_SHA:        ${{ steps.checksums.outputs.FBSDKCoreKit_sha }}
+          FBSDKLoginKit_SHA:       ${{ steps.checksums.outputs.FBSDKLoginKit_sha }}
+          FacebookLogin_SHA:       ${{ steps.checksums.outputs.FacebookLogin_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      # Order matters: commit Package.swift FIRST so that when `gh release create`
+      # auto-creates the tag, it points at the commit with the patched urls +
+      # checksums. If we created the release first, the tag would stop at the
+      # parent commit (with PENDING urls), causing SwiftPM consumers to hit 404.
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Facebook binaries to ${{ inputs.version }}"
+          git push origin HEAD:main
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "facebook-${{ inputs.version }}" \
+            build/artifacts/*.xcframework.zip \
+            --title "facebook-${{ inputs.version }}" \
+            --notes "Prebuilt xcframeworks for Cambly/facebook-ios-sdk@${{ inputs.version }}. Built with BUILD_LIBRARY_FOR_DISTRIBUTION=YES on Xcode 26.4.1."
