@@ -18,14 +18,18 @@ let package = Package(
     // them all when the consumer asks for the product.
 
     // === facebook ===
+    // Built from Cambly/facebook-ios-sdk@v11.0.1-cambly via the fork's
+    // FBSDK*-Dynamic xcodeproj schemes. The Swift wrapper APIs that lived in
+    // SPM modules "FacebookCore" / "FacebookLogin" are merged inside the
+    // FBSDKCoreKit / FBSDKLoginKit frameworks under xcodeproj-mode build, so
+    // there is no separate `FacebookLogin` or `FacebookCore` module exposed
+    // by these binaries. Cambly-Swift consumers `import FBSDKLoginKit` /
+    // `import FBSDKCoreKit` to get the same APIs.
     .library(
-      name: "FacebookLogin",
+      name: "FBSDKLoginKit",
       targets: [
-        "FacebookLogin",
-        "FacebookCore",
         "FBSDKLoginKit",
         "FBSDKCoreKit",
-        "LegacyCoreKit",
         "FBSDKCoreKit_Basics",
       ]
     ),
@@ -37,34 +41,19 @@ let package = Package(
     // Placeholder state: url points at a non-existent tag, checksum is 64 zeros
     // — SwiftPM resolve will fail until the first workflow run patches them.
     .binaryTarget(
-      name: "FacebookLogin",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FacebookLogin.xcframework.zip",
-      checksum: "e328d5ddb0f2762a3d6f0f0039895926771824bc8c3cf859291b329762169e8e"
-    ),
-    .binaryTarget(
-      name: "FacebookCore",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FacebookCore.xcframework.zip",
-      checksum: "38037de6aa1564d14218c47f5f0a94edf5e45389cf42e7b641b309f21b500790"
-    ),
-    .binaryTarget(
       name: "FBSDKLoginKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKLoginKit.xcframework.zip",
-      checksum: "9af4e2c0d413badb8d79aba6fabdb458dac7d044b63cd7f60d3e06de92c6491f"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKLoginKit.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit.xcframework.zip",
-      checksum: "d4d00365ced82946f3ab931aca2064bbad46696a4c9345c8f222e908dccba906"
-    ),
-    .binaryTarget(
-      name: "LegacyCoreKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/LegacyCoreKit.xcframework.zip",
-      checksum: "93560416c6a55dad348d14ed71ba90d77ca0208522a45131f7fe064b27d07bd2"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKCoreKit.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit_Basics",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit_Basics.xcframework.zip",
-      checksum: "978b4f7fbf795af0f527965eb45a1124bf0b25cc00dab40a275062db7e9e963a"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKCoreKit_Basics.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

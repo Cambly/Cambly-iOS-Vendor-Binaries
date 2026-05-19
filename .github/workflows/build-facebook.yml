@@ -75,11 +75,8 @@ jobs:
           VENDOR: facebook
           ASSETS_TAG: facebook-${{ inputs.version }}
           FBSDKCoreKit_Basics_SHA: ${{ steps.checksums.outputs.FBSDKCoreKit_Basics_sha }}
-          LegacyCoreKit_SHA:       ${{ steps.checksums.outputs.LegacyCoreKit_sha }}
-          FacebookCore_SHA:        ${{ steps.checksums.outputs.FacebookCore_sha }}
           FBSDKCoreKit_SHA:        ${{ steps.checksums.outputs.FBSDKCoreKit_sha }}
           FBSDKLoginKit_SHA:       ${{ steps.checksums.outputs.FBSDKLoginKit_sha }}
-          FacebookLogin_SHA:       ${{ steps.checksums.outputs.FacebookLogin_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
       # Order matters: commit Package.swift FIRST so that when `gh release create`
@@ -96,10 +93,15 @@ jobs:
           git push origin HEAD:main
 
       - name: Create GitHub release with assets
+        # Workflow is intentionally re-runnable for the same version (e.g. while
+        # debugging the build pipeline). Delete any prior release + tag for this
+        # version first so `gh release create` doesn't 422 on a name collision.
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "facebook-${{ inputs.version }}" \
+          tag="facebook-${{ inputs.version }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
             build/artifacts/*.xcframework.zip \
-            --title "facebook-${{ inputs.version }}" \
-            --notes "Prebuilt xcframeworks for Cambly/facebook-ios-sdk@${{ inputs.version }}. Built with BUILD_LIBRARY_FOR_DISTRIBUTION=YES on Xcode 26.4.1."
+            --title "$tag" \
+            --notes "Prebuilt xcframeworks for Cambly/facebook-ios-sdk@${{ inputs.version }}. Built from fork's FBSDK*-Dynamic xcodeproj schemes with BUILD_LIBRARY_FOR_DISTRIBUTION=YES."
