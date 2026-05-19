@@ -49,6 +49,23 @@ let package = Package(
       name: "Lottie",
       targets: ["Lottie"]
     ),
+
+    // === google-auth ===
+    // Built from google/GoogleSignIn-iOS@7.1.0 via unsignedapps/swift-create-xcframework
+    // — pure SPM upstream (no native xcodeproj), so xcodeproj-mode build doesn't
+    // apply. swift-create-xcframework generates an xcodeproj on the fly that
+    // produces a framework with proper Modules/ (plain SPM dynamic archive
+    // drops module metadata; see plan).
+    //
+    // Transitive deps (AppAuth / GTMAppAuth / GTMSessionFetcher) statically
+    // linked into GoogleSignIn.xcframework's binary, so we ship 1 xcframework.
+    // Cambly's only `import GoogleSignIn` works; AppAuth / GTMAppAuth /
+    // GTMSessionFetcher are not exposed as importable modules (Cambly doesn't
+    // import them anyway — verified 0 imports).
+    .library(
+      name: "GoogleSignIn",
+      targets: ["GoogleSignIn"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -87,6 +104,17 @@ let package = Package(
       name: "Lottie",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/lottie-4.5.2/Lottie.xcframework.zip",
       checksum: "d725b443b4805f608842b2e352a6788970f58dec65a6ada050c5649587788c2d"
+    ),
+
+    // === google-auth ===
+    // Source: google/GoogleSignIn-iOS (public upstream, no fork)
+    // Single xcframework with AppAuth / GTMAppAuth / GTMSessionFetcher
+    // statically linked in (see product comment above).
+    // URLs + checksums patched by build-google-auth.yml on each release.
+    .binaryTarget(
+      name: "GoogleSignIn",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/GoogleSignIn.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

@@ -1,0 +1,151 @@
+name: Build Google Auth
+
+# Manual trigger only. Produces a GitHub Release tagged `google-auth-<version>`
+# containing GoogleSignIn.xcframework (with AppAuth / GTMAppAuth /
+# GTMSessionFetcher statically linked in).
+#
+# Unlike the other build-*.yml workflows, this one doesn't go through the
+# Makefile — GoogleSignIn-iOS is pure SPM without a native xcodeproj, so the
+# Makefile's xcodebuild-on-existing-xcodeproj pattern doesn't apply. Instead
+# we use unsignedapps/swift-create-xcframework, which generates an xcodeproj
+# on the fly and archives the SPM library targets through it. (Plain SPM
+# dynamic archive drops Modules/ — see plan / Facebook overlay attempt.)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on google/GoogleSignIn-iOS (e.g. 7.1.0)"
+        required: true
+        type: string
+        default: 7.1.0
+      tool_version:
+        description: "swift-create-xcframework tag/ref"
+        required: true
+        type: string
+        default: "2.3.0"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          [ -n "$XCODE" ] || { echo "❌ No Xcode found"; exit 1; }
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build swift-create-xcframework from source
+        # No reliable Homebrew tap; build from source pinned at the requested
+        # ref. Releases <2.x predate Swift 6 — pin a 2.x.
+        run: |
+          git clone --depth 1 --branch "${{ inputs.tool_version }}" \
+            https://github.com/unsignedapps/swift-create-xcframework.git \
+            /tmp/swift-create-xcframework
+          cd /tmp/swift-create-xcframework
+          swift build -c release
+          sudo cp .build/release/swift-create-xcframework /usr/local/bin/
+          swift-create-xcframework --version || true
+
+      - name: Checkout GoogleSignIn-iOS upstream
+        uses: actions/checkout@v4
+        with:
+          repository: google/GoogleSignIn-iOS
+          ref: ${{ inputs.version }}
+          path: source
+
+      - name: Build GoogleSignIn xcframework
+        # swift-create-xcframework runs from a Package.swift directory and
+        # produces one .xcframework per library product in that package.
+        # GoogleSignIn-iOS exposes 2 products (GoogleSignIn, GoogleSignInSwift);
+        # transitive deps (AppAuth/GTMAppAuth/GTMSessionFetcher) get statically
+        # linked into the produced frameworks rather than emitted separately.
+        run: |
+          set -euo pipefail
+          mkdir -p build/artifacts
+          cd source
+          swift-create-xcframework --output ../build/artifacts/
+          cd ..
+          echo "--- build/artifacts after build:"
+          ls -la build/artifacts/
+          for xcf in build/artifacts/*.xcframework; do
+            echo "  --- $(basename "$xcf") slices:"
+            ls "$xcf" | sed 's|^|    |'
+            slice=$(ls "$xcf" 2>/dev/null | head -n 1)
+            if [ -n "$slice" ]; then
+              echo "  --- $(basename "$xcf")/$slice/ contents (first framework):"
+              fwk=$(ls "$xcf/$slice"/*.framework 2>/dev/null | head -n 1)
+              [ -n "$fwk" ] && find "$xcf/$slice/$(basename "$fwk")" -maxdepth 3 | sed 's|^|    |'
+            fi
+          done
+
+      - name: Zip + compute checksums (ship GoogleSignIn only)
+        id: checksums
+        # GoogleSignInSwift is a thin Swift wrapper — Cambly has 0 imports of
+        # it (verified). Drop it; ship just GoogleSignIn.
+        run: |
+          cd build/artifacts
+          if [ ! -d GoogleSignIn.xcframework ]; then
+            echo "❌ GoogleSignIn.xcframework not produced by swift-create-xcframework"
+            ls -la
+            exit 1
+          fi
+          # Remove the wrapper-only product zip if present to avoid uploading it
+          rm -rf GoogleSignInSwift.xcframework GoogleSignInSwift.xcframework.zip 2>/dev/null || true
+          zip -qry GoogleSignIn.xcframework.zip GoogleSignIn.xcframework
+          sha=$(swift package compute-checksum GoogleSignIn.xcframework.zip)
+          echo "GoogleSignIn_sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "GoogleSignIn: $sha"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: google-auth
+          ASSETS_TAG: google-auth-${{ inputs.version }}
+          GoogleSignIn_SHA: ${{ steps.checksums.outputs.GoogleSignIn_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      # Same race-safe push pattern as other build-*.yml workflows; see
+      # build-facebook.yml for explanation.
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Google auth binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="google-auth-${{ inputs.version }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/GoogleSignIn.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframework for google/GoogleSignIn-iOS@${{ inputs.version }}, built via unsignedapps/swift-create-xcframework@${{ inputs.tool_version }}. Transitive deps (AppAuth / GTMAppAuth / GTMSessionFetcher) statically linked in."
