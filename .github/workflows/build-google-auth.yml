@@ -19,11 +19,11 @@ on:
         required: true
         type: string
         default: 7.1.0
-      tool_version:
-        description: "swift-create-xcframework tag/ref (v-prefixed, e.g. v2.3.0)"
+      tool_ref:
+        description: "lonepalm/swift-create-xcframework git ref (branch or commit)"
         required: true
         type: string
-        default: "v2.3.0"
+        default: "master"
 
 permissions:
   contents: write
@@ -50,17 +50,20 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build swift-create-xcframework from source
-        # No reliable Homebrew tap; build from source pinned at the requested
-        # ref. Releases <2.x predate Swift 6 — pin a 2.x.
+      - name: Install swift-create-xcframework (lonepalm prebuilt macOS 26 binary)
+        # unsignedapps/swift-create-xcframework@v2.3.0 is archived and its
+        # transitive dep swift-llbuild can't compile against macOS 26 SDK
+        # (posix_spawn_file_actions_addchdir redeclaration error).
+        # lonepalm/swift-create-xcframework commits a prebuilt binary patched
+        # for macOS 26 right at the repo root — just clone + copy.
+        # See BUILD-MACOS26.md in the fork for context.
         run: |
-          git clone --depth 1 --branch "${{ inputs.tool_version }}" \
-            https://github.com/unsignedapps/swift-create-xcframework.git \
-            /tmp/swift-create-xcframework
-          cd /tmp/swift-create-xcframework
-          swift build -c release
-          sudo cp .build/release/swift-create-xcframework /usr/local/bin/
-          swift-create-xcframework --version || true
+          git clone --depth 1 --branch "${{ inputs.tool_ref }}" \
+            https://github.com/lonepalm/swift-create-xcframework.git \
+            /tmp/sc-xcf
+          test -f /tmp/sc-xcf/swift-create-xcframework || { echo "❌ prebuilt binary not at repo root"; ls /tmp/sc-xcf; exit 1; }
+          sudo install -m 755 /tmp/sc-xcf/swift-create-xcframework /usr/local/bin/swift-create-xcframework
+          swift-create-xcframework --help | head -n 5 || true
 
       - name: Checkout GoogleSignIn-iOS upstream
         uses: actions/checkout@v4
