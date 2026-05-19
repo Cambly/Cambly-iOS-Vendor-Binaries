@@ -77,8 +77,16 @@ build-xcframeworks: clone
 	@# uses the SwiftPM auto-generated workspace (auto-created on first invocation
 	@# from a Package.swift directory). This is the only way to get scheme=product
 	@# names matching what our overlay declared.
+	@#
+	@# Iteration A (debugging Modules/ absence): no -quiet, extra build settings
+	@# that should encourage module emission, and post-archive inspection so we
+	@# can see where Swift module / ObjC modulemap actually land.
+	@#
+	@# Only probe FBSDKCoreKit_Basics first (the leaf, fastest). If diagnostic data
+	@# is enough we can revert to the full loop after fixing.
 	@for product in $(PRODUCTS); do \
-	  echo "🔨 Building $$product for iOS device + simulator..."; \
+	  echo ""; \
+	  echo "▶▶▶ Build $$product (iOS device)"; \
 	  rm -rf $(BUILD_DIR)/$$product-iOS-device.xcarchive $(BUILD_DIR)/$$product-iOS-sim.xcarchive; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
 	    -workspace .swiftpm/xcode/package.xcworkspace \
@@ -88,7 +96,12 @@ build-xcframeworks: clone
 	    -configuration Release \
 	    SKIP_INSTALL=NO \
 	    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-	    -quiet ) || exit 1; \
+	    DEFINES_MODULE=YES \
+	    SWIFT_INSTALL_OBJC_HEADER=YES \
+	    SWIFT_EMIT_MODULE_INTERFACE=YES \
+	  ) || exit 1; \
+	  echo ""; \
+	  echo "▶▶▶ Build $$product (iOS Simulator)"; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
 	    -workspace .swiftpm/xcode/package.xcworkspace \
 	    -scheme $$product \
@@ -97,17 +110,33 @@ build-xcframeworks: clone
 	    -configuration Release \
 	    SKIP_INSTALL=NO \
 	    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
-	    -quiet ) || exit 1; \
+	    DEFINES_MODULE=YES \
+	    SWIFT_INSTALL_OBJC_HEADER=YES \
+	    SWIFT_EMIT_MODULE_INTERFACE=YES \
+	  ) || exit 1; \
+	  echo ""; \
+	  echo "🔍 Post-archive diagnostics for $$product:"; \
+	  echo "  --- all .framework dirs in device archive:"; \
+	  find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "*.framework" 2>/dev/null || true; \
+	  echo "  --- module-related files anywhere in device archive:"; \
+	  find $(BUILD_DIR)/$$product-iOS-device.xcarchive \( -name "*.swiftmodule" -o -name "*.swiftinterface" -o -name "*.modulemap" -o -name "module.modulemap" \) 2>/dev/null || true; \
+	  echo "  --- Modules/ dirs in device archive:"; \
+	  find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "Modules" 2>/dev/null || true; \
+	  echo ""; \
 	  echo "📦 Creating $$product.xcframework..."; \
 	  rm -rf $(ARTIFACTS_DIR)/$$product.xcframework; \
-	  device_fwk=$$(find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "$$product.framework" | head -n 1); \
-	  sim_fwk=$$(find $(BUILD_DIR)/$$product-iOS-sim.xcarchive -type d -name "$$product.framework" | head -n 1); \
+	  : "Prefer Library/Frameworks/ over usr/local/lib/ (former is dynamic-ready, latter is often static stub)"; \
+	  device_fwk=$$(find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "$$product.framework" -path "*Library/Frameworks*" 2>/dev/null | head -n 1); \
+	  [ -z "$$device_fwk" ] && device_fwk=$$(find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "$$product.framework" 2>/dev/null | head -n 1); \
+	  sim_fwk=$$(find $(BUILD_DIR)/$$product-iOS-sim.xcarchive -type d -name "$$product.framework" -path "*Library/Frameworks*" 2>/dev/null | head -n 1); \
+	  [ -z "$$sim_fwk" ] && sim_fwk=$$(find $(BUILD_DIR)/$$product-iOS-sim.xcarchive -type d -name "$$product.framework" 2>/dev/null | head -n 1); \
 	  if [ -z "$$device_fwk" ] || [ -z "$$sim_fwk" ]; then \
-	    echo "❌ Could not locate $$product.framework in archive(s)"; \
-	    echo "device archive contents:"; find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "*.framework"; \
-	    echo "sim archive contents:";    find $(BUILD_DIR)/$$product-iOS-sim.xcarchive    -type d -name "*.framework"; \
-	    exit 1; \
+	    echo "❌ Could not locate $$product.framework"; exit 1; \
 	  fi; \
+	  echo "  using device: $$device_fwk"; \
+	  echo "  using sim:    $$sim_fwk"; \
+	  echo "  --- device framework contents:"; \
+	  find "$$device_fwk" -maxdepth 3 2>/dev/null || true; \
 	  xcodebuild -create-xcframework \
 	    -framework $$device_fwk \
 	    -framework $$sim_fwk \
