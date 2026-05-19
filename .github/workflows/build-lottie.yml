@@ -1,0 +1,84 @@
+name: Build Lottie
+
+# Manual trigger only. To cut a new Lottie release:
+#   Actions → Build Lottie → Run workflow → (set version) → Run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on airbnb/lottie-ios (e.g. 4.5.2)"
+        required: true
+        type: string
+        default: 4.5.2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build Lottie xcframework via Makefile
+        run: |
+          make all VENDOR=lottie VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/airbnb/lottie-ios.git
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: lottie
+          ASSETS_TAG: lottie-${{ inputs.version }}
+          Lottie_SHA: ${{ steps.checksums.outputs.Lottie_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Lottie binaries to ${{ inputs.version }}"
+          git push origin HEAD:main
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="lottie-${{ inputs.version }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframework for airbnb/lottie-ios@${{ inputs.version }}. Built from upstream's \`Lottie (iOS)\` xcodeproj scheme with BUILD_LIBRARY_FOR_DISTRIBUTION=YES."

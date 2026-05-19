@@ -33,13 +33,27 @@ let package = Package(
         "FBSDKCoreKit_Basics",
       ]
     ),
+
+    // === alamofire ===
+    // Built from Alamofire/Alamofire@5.10.2 via its `Alamofire iOS` xcodeproj
+    // scheme.
+    .library(
+      name: "Alamofire",
+      targets: ["Alamofire"]
+    ),
+
+    // === lottie ===
+    // Built from airbnb/lottie-ios@4.5.2 via its `Lottie (iOS)` xcodeproj
+    // scheme.
+    .library(
+      name: "Lottie",
+      targets: ["Lottie"]
+    ),
   ],
   targets: [
     // === facebook ===
     // Source: Cambly/facebook-ios-sdk (Cambly fork of facebook/facebook-ios-sdk)
     // URLs + checksums patched by build-facebook.yml workflow on each release.
-    // Placeholder state: url points at a non-existent tag, checksum is 64 zeros
-    // — SwiftPM resolve will fail until the first workflow run patches them.
     .binaryTarget(
       name: "FBSDKLoginKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKLoginKit.xcframework.zip",
@@ -54,6 +68,25 @@ let package = Package(
       name: "FBSDKCoreKit_Basics",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit_Basics.xcframework.zip",
       checksum: "cdb427ed40c5466e36152808c6ab2e92cd3a7dfb9f150bef7d132cbfdf6c4682"
+    ),
+
+    // === alamofire ===
+    // Source: Alamofire/Alamofire (public upstream, no fork)
+    // URLs + checksums patched by build-alamofire.yml workflow on each release.
+    // Placeholder state until first workflow run patches them.
+    .binaryTarget(
+      name: "Alamofire",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/Alamofire.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === lottie ===
+    // Source: airbnb/lottie-ios (public upstream, no fork)
+    // URLs + checksums patched by build-lottie.yml workflow on each release.
+    .binaryTarget(
+      name: "Lottie",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/Lottie.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

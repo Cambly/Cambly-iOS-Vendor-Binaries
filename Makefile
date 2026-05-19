@@ -1,16 +1,18 @@
 # Multi-vendor xcframework builder.
 #
-# Builds upstream SPM packages / xcodeprojs as .xcframeworks suitable for
+# Builds upstream packages (xcodeproj-mode) as .xcframeworks suitable for
 # distribution via the binaryTarget entries in Package.swift. Used by
 # .github/workflows/build-*.yml but can also be invoked locally as a fallback.
 #
 # Usage:
 #   make all VENDOR=facebook  VERSION=v11.0.1-cambly
-#   make all VENDOR=alamofire VERSION=5.10.2          # future
+#   make all VENDOR=alamofire VERSION=5.10.2
+#   make all VENDOR=lottie    VERSION=4.5.2
 #   make clean
 #
-# CI runners override UPSTREAM_REPO_URL to HTTPS form with a PAT (no SSH key
-# on macos-15). Local devs can use the SSH default.
+# CI runners override UPSTREAM_REPO_URL to HTTPS form for public upstreams (no
+# SSH key on macos-15). For private forks (Facebook), CI passes an https
+# URL with PAT. Local devs can use the SSH defaults.
 
 VENDOR ?=
 VERSION ?=
@@ -20,28 +22,41 @@ ARTIFACTS_DIR := $(BUILD_DIR)/artifacts
 WORK_DIR = $(BUILD_DIR)/$(VENDOR)-$(VERSION)
 
 # ─── Per-vendor configuration ───────────────────────────────────────────────
-# When adding a new vendor: add an ifeq block setting UPSTREAM_REPO_URL and
-# SCHEMES (the xcodebuild scheme list to archive). PRODUCTS is derived from
-# SCHEMES by stripping the "-Dynamic" suffix; if a vendor doesn't follow this
-# naming convention, set PRODUCTS explicitly to match the framework names.
+# When adding a new vendor, add an `ifeq` block setting:
+#   UPSTREAM_REPO_URL   – where to git clone
+#   BUILD_PROJECT_FLAG  – passed to `xcodebuild archive`: e.g.
+#                         `-project Alamofire.xcodeproj` or
+#                         `-workspace FacebookSDK.xcworkspace`
+#   SCHEME_PRODUCT_PAIRS – space-separated quoted "scheme:product" tokens.
+#                         The build loop iterates each pair: `scheme` is what
+#                         xcodebuild builds (may contain spaces / parens),
+#                         `product` is the resulting framework name (also the
+#                         binaryTarget name in our Package.swift).
+#                         A single token uses double-quotes so shell `for`
+#                         doesn't split it on internal whitespace.
 
 ifeq ($(VENDOR),facebook)
   UPSTREAM_REPO_URL ?= git@github.com:Cambly/facebook-ios-sdk.git
-  # Use the Cambly fork's existing dynamic xcodeproj schemes — these produce
-  # proper distribution-ready frameworks with Modules/, Headers/, and Swift
-  # module interface files. The fork shipped these for Carthage years ago.
-  #
-  # We tried SPM-mode build with .library(... type: .dynamic, targets: [X])
-  # first; it produced binaries but no module metadata (no .swiftmodule, no
-  # modulemap), so consumers couldn't `import` them. See plan for details.
-  #
-  # Schemes here are dependency-leaf first.
-  SCHEMES := FBSDKCoreKit_Basics-Dynamic FBSDKCoreKit-Dynamic FBSDKLoginKit-Dynamic
+  BUILD_PROJECT_FLAG := -workspace FacebookSDK.xcworkspace
+  SCHEME_PRODUCT_PAIRS := \
+    "FBSDKCoreKit_Basics-Dynamic:FBSDKCoreKit_Basics" \
+    "FBSDKCoreKit-Dynamic:FBSDKCoreKit" \
+    "FBSDKLoginKit-Dynamic:FBSDKLoginKit"
 endif
 
-# Strip "-Dynamic" suffix from each scheme to get the framework / product name.
-# (FBSDKCoreKit-Dynamic scheme → produces FBSDKCoreKit.framework etc.)
-PRODUCTS := $(SCHEMES:-Dynamic=)
+ifeq ($(VENDOR),alamofire)
+  UPSTREAM_REPO_URL ?= git@github.com:Alamofire/Alamofire.git
+  BUILD_PROJECT_FLAG := -project Alamofire.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "Alamofire iOS:Alamofire"
+endif
+
+ifeq ($(VENDOR),lottie)
+  UPSTREAM_REPO_URL ?= git@github.com:airbnb/lottie-ios.git
+  BUILD_PROJECT_FLAG := -project Lottie.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "Lottie (iOS):Lottie"
+endif
 
 # ─── Targets ────────────────────────────────────────────────────────────────
 
@@ -51,8 +66,9 @@ all: require-args build-xcframeworks zip checksums
 
 require-args:
 	@test -n "$(VENDOR)"  || { echo "❌ VENDOR is required, e.g. make all VENDOR=facebook VERSION=v11.0.1-cambly"; exit 1; }
-	@test -n "$(VERSION)" || { echo "❌ VERSION is required, e.g. make all VENDOR=facebook VERSION=v11.0.1-cambly"; exit 1; }
-	@test -n "$(SCHEMES)" || { echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1; }
+	@test -n "$(VERSION)" || { echo "❌ VERSION is required"; exit 1; }
+	@test -n "$(SCHEME_PRODUCT_PAIRS)" || { echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1; }
+	@test -n "$(BUILD_PROJECT_FLAG)"   || { echo "❌ BUILD_PROJECT_FLAG not set for VENDOR='$(VENDOR)'"; exit 1; }
 
 clean:
 	rm -rf $(BUILD_DIR)
@@ -61,26 +77,35 @@ clone: require-args
 	mkdir -p $(BUILD_DIR)
 	test -d $(WORK_DIR) || git clone --depth 1 --branch $(VERSION) $(UPSTREAM_REPO_URL) $(WORK_DIR)
 
+# PRODUCTS is derived from SCHEME_PRODUCT_PAIRS for use by zip / checksums.
+# (Bash-level split on ":" inside each pair.)
+PRODUCTS_LIST = $(shell printf '%s\n' $(SCHEME_PRODUCT_PAIRS) | tr -d '"' | awk -F: '{print $$2}')
+
 build-xcframeworks: clone
 	mkdir -p $(ARTIFACTS_DIR)
-	@for scheme in $(SCHEMES); do \
-	  product=$${scheme%-Dynamic}; \
+	@# Loop over scheme:product pairs. Quoted Make tokens like "Alamofire iOS:Alamofire"
+	@# survive shell word-splitting because the surrounding double-quotes are still
+	@# present in the substituted text; `for pair in ...` then treats each quoted
+	@# token as a single iteration.
+	@for pair in $(SCHEME_PRODUCT_PAIRS); do \
+	  scheme="$${pair%%:*}"; \
+	  product="$${pair##*:}"; \
 	  echo ""; \
-	  echo "▶▶▶ Archive $$scheme (iOS device)"; \
+	  echo "▶▶▶ Archive scheme=\"$$scheme\" → $$product.framework (iOS device)"; \
 	  rm -rf $(BUILD_DIR)/$$product-iOS-device.xcarchive $(BUILD_DIR)/$$product-iOS-sim.xcarchive; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
-	    -workspace FacebookSDK.xcworkspace \
-	    -scheme $$scheme \
+	    $(BUILD_PROJECT_FLAG) \
+	    -scheme "$$scheme" \
 	    -destination "generic/platform=iOS" \
 	    -archivePath $(CURDIR)/$(BUILD_DIR)/$$product-iOS-device.xcarchive \
 	    -configuration Release \
 	    SKIP_INSTALL=NO \
 	    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
 	    -quiet ) || exit 1; \
-	  echo "▶▶▶ Archive $$scheme (iOS Simulator)"; \
+	  echo "▶▶▶ Archive scheme=\"$$scheme\" → $$product.framework (iOS Simulator)"; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
-	    -workspace FacebookSDK.xcworkspace \
-	    -scheme $$scheme \
+	    $(BUILD_PROJECT_FLAG) \
+	    -scheme "$$scheme" \
 	    -destination "generic/platform=iOS Simulator" \
 	    -archivePath $(CURDIR)/$(BUILD_DIR)/$$product-iOS-sim.xcarchive \
 	    -configuration Release \
@@ -99,7 +124,7 @@ build-xcframeworks: clone
 	  fi; \
 	  echo "  device: $$device_fwk"; \
 	  echo "  sim:    $$sim_fwk"; \
-	  echo "  device framework contents (sanity check Modules/ + Headers/):"; \
+	  echo "  device framework contents:"; \
 	  find "$$device_fwk" -maxdepth 3 2>/dev/null | sed 's|^|    |'; \
 	  xcodebuild -create-xcframework \
 	    -framework $$device_fwk \
@@ -108,7 +133,7 @@ build-xcframeworks: clone
 	done
 
 zip: build-xcframeworks
-	@cd $(ARTIFACTS_DIR) && for product in $(PRODUCTS); do \
+	@cd $(ARTIFACTS_DIR) && for product in $(PRODUCTS_LIST); do \
 	  echo "🗜  Zipping $$product.xcframework..."; \
 	  rm -f $$product.xcframework.zip; \
 	  zip -qry $$product.xcframework.zip $$product.xcframework; \
@@ -117,7 +142,7 @@ zip: build-xcframeworks
 checksums: zip
 	@echo ""
 	@echo "=== sha256 checksums ==="
-	@cd $(ARTIFACTS_DIR) && for product in $(PRODUCTS); do \
+	@cd $(ARTIFACTS_DIR) && for product in $(PRODUCTS_LIST); do \
 	  sha=$$(swift package compute-checksum $$product.xcframework.zip); \
 	  echo "$$product: $$sha"; \
 	done
