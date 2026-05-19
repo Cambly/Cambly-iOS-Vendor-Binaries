@@ -20,10 +20,10 @@ on:
         type: string
         default: 7.1.0
       tool_version:
-        description: "swift-create-xcframework tag/ref"
+        description: "swift-create-xcframework tag/ref (v-prefixed, e.g. v2.3.0)"
         required: true
         type: string
-        default: "2.3.0"
+        default: "v2.3.0"
 
 permissions:
   contents: write
