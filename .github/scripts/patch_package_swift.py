@@ -68,13 +68,22 @@ def require_env(name: str) -> str:
     return val
 
 
-# Match `targets: [` and find its matching `]`. Naive bracket counting works
-# because Package.swift doesn't put `[` / `]` in string literals.
+# Match the top-level `targets: [` and find its matching `]`. We have to skip
+# past `products: [ ... ]` first because its inner `.library(... targets: [...])`
+# entries contain a `targets:` keyword that would otherwise match. Naive bracket
+# counting is fine because Package.swift doesn't put `[` / `]` inside string
+# literals at these scopes.
 def locate_targets_array(text: str) -> tuple[int, int] | None:
-    m = re.search(r"\btargets:\s*\[", text)
+    cursor = _skip_past_named_array(text, "products", 0)
+    inner = _find_named_array(text, "targets", cursor)
+    return inner
+
+
+def _find_named_array(text: str, name: str, start: int) -> tuple[int, int] | None:
+    m = re.search(rf"\b{re.escape(name)}:\s*\[", text[start:])
     if not m:
         return None
-    open_pos = m.end() - 1  # the `[`
+    open_pos = start + m.end() - 1  # the `[`
     depth = 0
     for i in range(open_pos, len(text)):
         ch = text[i]
@@ -85,6 +94,17 @@ def locate_targets_array(text: str) -> tuple[int, int] | None:
             if depth == 0:
                 return open_pos + 1, i
     return None
+
+
+def _skip_past_named_array(text: str, name: str, start: int) -> int:
+    """Find `<name>: [` after `start` and return offset just past its closing `]`.
+    If no such array exists, return `start` unchanged.
+    """
+    arr = _find_named_array(text, name, start)
+    if arr is None:
+        return start
+    _, close = arr
+    return close + 1
 
 
 # Find lines `// === <vendor> ===` (case-insensitive on vendor) within
