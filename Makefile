@@ -58,6 +58,21 @@ ifeq ($(VENDOR),lottie)
     "Lottie (iOS):Lottie"
 endif
 
+ifeq ($(VENDOR),keychainaccess)
+  UPSTREAM_REPO_URL ?= git@github.com:kishikawakatsumi/KeychainAccess.git
+  # xcodeproj is in Lib/ subdir, not at repo root (unlike Alamofire/Lottie).
+  BUILD_PROJECT_FLAG := -project Lib/KeychainAccess.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "KeychainAccess:KeychainAccess"
+endif
+
+ifeq ($(VENDOR),devicekit)
+  UPSTREAM_REPO_URL ?= git@github.com:devicekit/DeviceKit.git
+  BUILD_PROJECT_FLAG := -project DeviceKit.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "DeviceKit:DeviceKit"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
 .PHONY: all clean clone build-xcframeworks zip checksums require-args
@@ -72,7 +87,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 

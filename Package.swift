@@ -49,6 +49,25 @@ let package = Package(
       name: "Lottie",
       targets: ["Lottie"]
     ),
+
+    // === keychainaccess ===
+    // Built from kishikawakatsumi/KeychainAccess@v4.2.2 via its
+    // `Lib/KeychainAccess.xcodeproj` scheme `KeychainAccess`. The library is a
+    // thin Swift wrapper around iOS Keychain Services; bundle-id-related
+    // behavior is dictated by the consuming app's entitlements + runtime
+    // process identity, not by the framework binary itself.
+    .library(
+      name: "KeychainAccess",
+      targets: ["KeychainAccess"]
+    ),
+
+    // === devicekit ===
+    // Built from devicekit/DeviceKit@5.7.0 via its `DeviceKit.xcodeproj`
+    // scheme `DeviceKit`.
+    .library(
+      name: "DeviceKit",
+      targets: ["DeviceKit"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -87,6 +106,24 @@ let package = Package(
       name: "Lottie",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/lottie-4.5.2/Lottie.xcframework.zip",
       checksum: "d725b443b4805f608842b2e352a6788970f58dec65a6ada050c5649587788c2d"
+    ),
+
+    // === keychainaccess ===
+    // Source: kishikawakatsumi/KeychainAccess (public upstream, no fork)
+    // URLs + checksums patched by build-keychainaccess.yml on each release.
+    .binaryTarget(
+      name: "KeychainAccess",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/KeychainAccess.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === devicekit ===
+    // Source: devicekit/DeviceKit (public upstream, no fork)
+    // URLs + checksums patched by build-devicekit.yml on each release.
+    .binaryTarget(
+      name: "DeviceKit",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/DeviceKit.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )
