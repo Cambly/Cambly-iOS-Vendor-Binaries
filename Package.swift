@@ -76,8 +76,8 @@ let package = Package(
     // Placeholder state until first workflow run patches them.
     .binaryTarget(
       name: "Alamofire",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/Alamofire.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/alamofire-5.10.2/Alamofire.xcframework.zip",
+      checksum: "959d814c1413e99b827323e989d29108de1419decb6c246387fb721919b21d54"
     ),
 
     // === lottie ===
