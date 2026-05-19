@@ -104,7 +104,14 @@ jobs:
           mkdir -p build/artifacts
           cat > source/scxcf.xcconfig <<'XCCONFIG'
           IPHONEOS_DEPLOYMENT_TARGET = 17.0
-          OTHER_LDFLAGS = $(inherited) -framework UIKit -framework Security -framework Foundation
+          // Force-link the Apple system frameworks the Google auth stack uses
+          // via non-module imports. Without these, autolink doesn't trigger in
+          // the generated xcodeproj. Identified by iterative undefined-symbol
+          // errors:
+          //   GTMSessionFetcher → UIKit, Security
+          //   AppAuth (OIDExternalUserAgentIOS) → AuthenticationServices, SafariServices
+          //   LocalAuthentication / Foundation included preemptively as likely-needed.
+          OTHER_LDFLAGS = $(inherited) -framework UIKit -framework Foundation -framework Security -framework AuthenticationServices -framework SafariServices -framework LocalAuthentication
           XCCONFIG
           cd source
           swift-create-xcframework --platform ios \
