@@ -63,6 +63,9 @@ jobs:
           Lottie_SHA: ${{ steps.checksums.outputs.Lottie_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
+      # Race protection: see build-facebook.yml for the explanation. tl;dr
+      # actions/checkout pins to trigger-time SHA, so rebase onto current
+      # origin/main before push to handle concurrent vendor builds.
       - name: Commit Package.swift update + push
         run: |
           git config user.name "github-actions[bot]"
@@ -70,7 +73,16 @@ jobs:
           git add Package.swift
           git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
           git commit -m "Update Lottie binaries to ${{ inputs.version }}"
-          git push origin HEAD:main
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
 
       - name: Create GitHub release with assets
         env:
