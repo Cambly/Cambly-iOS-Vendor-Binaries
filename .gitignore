@@ -8,3 +8,5 @@ DerivedData/
 *.log
 .swiftpm/
 .build/
+__pycache__/
+*.pyc
