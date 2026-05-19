@@ -102,20 +102,21 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p build/artifacts
-          cat > source/scxcf.xcconfig <<'XCCONFIG'
-          IPHONEOS_DEPLOYMENT_TARGET = 17.0
-          // Force-link the Apple system frameworks the Google auth stack uses
-          // via non-module imports. Without these, autolink doesn't trigger in
-          // the generated xcodeproj. Identified by iterative undefined-symbol
-          // errors:
-          //   GTMSessionFetcher → UIKit, Security
-          //   AppAuth (OIDExternalUserAgentIOS) → AuthenticationServices, SafariServices
-          //   LocalAuthentication / Foundation included preemptively as likely-needed.
-          OTHER_LDFLAGS = $(inherited) -framework UIKit -framework Foundation -framework Security -framework AuthenticationServices -framework SafariServices -framework LocalAuthentication
-          XCCONFIG
           cd source
+          # Force-link the Apple system frameworks the Google auth stack uses
+          # via non-module imports. Without these, autolink doesn't trigger in
+          # the generated xcodeproj. Identified iteratively from undefined-symbol
+          # errors:
+          #   GTMSessionFetcher → UIKit, Security
+          #   AppAuth (OIDExternalUserAgentIOS) → AuthenticationServices, SafariServices
+          #   LocalAuthentication / Foundation included preemptively as likely-needed.
+          #
+          # Use --xc-setting (forwarded directly to xcodebuild) rather than
+          # --xcconfig — testing showed --xcconfig's IPHONEOS_DEPLOYMENT_TARGET
+          # override silently didn't apply (warning still showed 9.0).
           swift-create-xcframework --platform ios \
-            --xcconfig scxcf.xcconfig \
+            --xc-setting "IPHONEOS_DEPLOYMENT_TARGET=17.0" \
+            --xc-setting "OTHER_LDFLAGS=-framework UIKit -framework Foundation -framework Security -framework AuthenticationServices -framework SafariServices -framework LocalAuthentication" \
             --output ../build/artifacts/ \
             GoogleSignIn
           cd ..
