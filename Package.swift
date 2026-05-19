@@ -39,32 +39,32 @@ let package = Package(
     .binaryTarget(
       name: "FacebookLogin",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FacebookLogin.xcframework.zip",
-      checksum: "22c035a0dbbd7de601621a9ab92ec3468fa3f370c0d784b7b970d3a6dd7ef0f6"
+      checksum: "e328d5ddb0f2762a3d6f0f0039895926771824bc8c3cf859291b329762169e8e"
     ),
     .binaryTarget(
       name: "FacebookCore",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FacebookCore.xcframework.zip",
-      checksum: "3bd9844f152595d92ef969ead539c7d729fe5d7d9859170ea07114e9f35d080e"
+      checksum: "38037de6aa1564d14218c47f5f0a94edf5e45389cf42e7b641b309f21b500790"
     ),
     .binaryTarget(
       name: "FBSDKLoginKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKLoginKit.xcframework.zip",
-      checksum: "8b0243aa3a71d869f1c76ba3b5051de4dc6af7b8c1b7f7ae0f08fc0a0fbaba00"
+      checksum: "9af4e2c0d413badb8d79aba6fabdb458dac7d044b63cd7f60d3e06de92c6491f"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit.xcframework.zip",
-      checksum: "eb1aa8fa64d7335895392ec0c0d4d440eb3855b8aa1349ded56761f07c322c67"
+      checksum: "d4d00365ced82946f3ab931aca2064bbad46696a4c9345c8f222e908dccba906"
     ),
     .binaryTarget(
       name: "LegacyCoreKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/LegacyCoreKit.xcframework.zip",
-      checksum: "85f4031cd94b7b202774d05dde480ea2499f2d9ade9e89cdad5c4995c97c9591"
+      checksum: "93560416c6a55dad348d14ed71ba90d77ca0208522a45131f7fe064b27d07bd2"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit_Basics",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit_Basics.xcframework.zip",
-      checksum: "d30926992d29141a9f3622e459000321804e831d81215b46c7f991330467485d"
+      checksum: "978b4f7fbf795af0f527965eb45a1124bf0b25cc00dab40a275062db7e9e963a"
     ),
   ]
 )
