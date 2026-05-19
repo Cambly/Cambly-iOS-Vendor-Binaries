@@ -4,11 +4,17 @@ Prebuilt `.xcframework` distribution of vendored iOS SDKs for Cambly's iOS apps.
 
 Versions tracked:
 
-| Vendor product | Upstream source | Current release tag |
-|---|---|---|
-| `FacebookLogin` (+ 5 transitive frameworks) | `Cambly/facebook-ios-sdk@v11.0.1-cambly` (Cambly fork) | `facebook-v11.0.1-cambly` |
+| Vendor product | Upstream source | Current release tag | Build via |
+|---|---|---|---|
+| `FBSDKLoginKit` (+ `FBSDKCoreKit` + `FBSDKCoreKit_Basics` transitive) | `Cambly/facebook-ios-sdk@v11.0.1-cambly` (private Cambly fork) | `facebook-v11.0.1-cambly` | `FBSDK*-Dynamic` schemes in `FacebookSDK.xcworkspace` |
+| `Alamofire` | `Alamofire/Alamofire@5.10.2` | `alamofire-5.10.2` | `Alamofire iOS` scheme in `Alamofire.xcodeproj` |
+| `Lottie` | `airbnb/lottie-ios@4.5.2` | `lottie-4.5.2` | `Lottie (iOS)` scheme in `Lottie.xcodeproj` |
+| `KeychainAccess` | `kishikawakatsumi/KeychainAccess@v4.2.2` | `keychainaccess-v4.2.2` | `KeychainAccess` scheme in `Lib/KeychainAccess.xcodeproj` |
+| `DeviceKit` | `devicekit/DeviceKit@5.7.0` | `devicekit-5.7.0` | `DeviceKit` scheme in `DeviceKit.xcodeproj` |
 
-More vendors to be added — see "Adding a new vendor" below.
+Cambly-Swift pins this repo by `revision: <vendor>-<version>` (typically the most recently bumped vendor's tag — the commit at that tag carries all vendors' current URLs/checksums, since each workflow patches the shared `Package.swift`).
+
+More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) is currently **blocked**: those packages are SPM-only (no upstream xcodeproj), and our xcodeproj-mode pipeline doesn't fit. See the abandoned `swift-create-xcframework` attempt in git history (reverted in `113f18b`) for the negative result.
 
 ## How it works
 
@@ -27,35 +33,48 @@ Each vendor has its own `workflow_dispatch` workflow in **Actions**.
    - Patch this vendor's `// === <vendor> ===` section in `Package.swift` with new URLs + checksums
    - Commit + push `Package.swift` to `main`
    - Create GitHub release `<vendor>-<version>` with the zipped xcframeworks as assets
-3. In Cambly-Swift, bump `project_files/swift_packages.yml`:
+3. In Cambly-Swift, bump `project_files/swift_packages.yml` to the new vendor tag:
    ```diff
     CamblyVendorBinaries:
       url: git@github.com:Cambly/Cambly-iOS-Vendor-Binaries
-   -  revision: facebook-v11.0.1-cambly
-   +  revision: facebook-v11.0.2-cambly
+   -  revision: devicekit-5.7.0
+   +  revision: alamofire-5.11.0
    ```
+   It doesn't matter which vendor tag you pin to — the commit at that tag carries the patched URL/checksum for **all** vendors. Convention: bump to whatever vendor you just released.
 4. Verify locally, then open a Cambly-Swift PR — diff should be just that one yml line plus an auto-updated `Package.resolved`.
 
 ## Adding a new vendor (4 steps)
 
-Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section, one GHA workflow. Marker comments tie everything together.
+Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section, one GHA workflow. Marker comments tie everything together. Reference `build-alamofire.yml` (single-framework public upstream) or `build-facebook.yml` (multi-framework private fork) as templates.
 
 1. **`Package.swift`** — under `products:`, add a `// === <vendor-key> ===` marker line and a `.library(name: "<ProductName>", targets: [...])`. Under `targets:`, add the same marker line and N `.binaryTarget(name: ..., url: "...PENDING...", checksum: "0000…")` entries. Use 64 hex zeros as the placeholder checksum; the first workflow run patches everything to real values.
-2. **`Makefile`** — add a per-vendor block:
+2. **`Makefile`** — add a per-vendor `ifeq` block. Two patterns depending on upstream layout:
    ```makefile
+   # Pattern A — upstream xcodeproj/xcworkspace at root
    ifeq ($(VENDOR),<vendor-key>)
-     UPSTREAM_REPO_URL ?= git@github.com:<owner>/<repo>.git
-     PRODUCTS := <space-separated scheme list, transitive deps first>
+     BUILD_PROJECT_FLAG := -project <Name>.xcodeproj    # or -workspace <Name>.xcworkspace
+     SCHEME_PRODUCT_PAIRS := "<scheme>:<output-product-name>"
+   endif
+
+   # Pattern B — xcodeproj in a subdirectory (e.g. KeychainAccess uses Lib/)
+   ifeq ($(VENDOR),<vendor-key>)
+     BUILD_PROJECT_FLAG := -project Lib/<Name>.xcodeproj
+     SCHEME_PRODUCT_PAIRS := "<scheme>:<output-product-name>"
    endif
    ```
-   For public upstreams (Alamofire / Lottie / etc.), use the unauthenticated `https://github.com/...` URL as the default and no PAT is needed.
-3. **`.github/workflows/build-<vendor>.yml`** — copy `build-facebook.yml`, change:
-   - `name:` and the `workflow_dispatch` description
+   Add `<vendor-key>` to the `case` statement in `require-args`. Use quoted `"scheme:product"` tokens to handle scheme names with spaces / parens (e.g. `"Alamofire iOS:Alamofire"`, `"Lottie (iOS):Lottie"`).
+3. **`.github/workflows/build-<vendor>.yml`** — copy `build-alamofire.yml` (simplest template), change:
+   - `name:` and the `workflow_dispatch` description / default version
    - `VENDOR` env (used by patch script)
    - `ASSETS_TAG: <vendor-key>-${{ inputs.version }}`
    - The `<TargetName>_SHA` env vars list (one per `.binaryTarget` you declared in step 1)
+   - `UPSTREAM_REPO_URL` in the `make all` invocation
    - Release tag in the `gh release create` step
+
+   Keep `concurrency: { group: package-update, cancel-in-progress: false }` and the `git fetch origin main && git rebase origin/main` retry loop — they prevent race-on-push when two vendor workflows touch `Package.swift` in close succession.
 4. **Cambly-Swift** — in `project_files/shared_swift_packages_dependencies.yml` (and any per-target SPM dep yml), replace `package: <UpstreamSPMPackage> / product: X` with `package: CamblyVendorBinaries / product: X`. Remove the old `<UpstreamSPMPackage>` entry from `swift_packages.yml`. Bump the `revision:` pin to the new vendor's tag.
+
+   ⚠️ **Watch for single-line `- package: X` shortcuts** in yml — xcodegen lets you omit `product:` when it matches the package name. Those break after rename to `CamblyVendorBinaries` (no product named `CamblyVendorBinaries` exists). Always add an explicit `product: <Original>` line after the rename. (Caught us on `login.yml` for DeviceKit.)
 
 ## One-time setup
 
@@ -72,13 +91,14 @@ Public upstreams don't need this token — their `UPSTREAM_REPO_URL` uses the un
 If GitHub Actions is unavailable:
 
 ```bash
-make all VENDOR=facebook VERSION=v11.0.1-cambly
-# Outputs build/artifacts/*.xcframework.zip and prints sha256 to stdout
+make all VENDOR=alamofire VERSION=5.10.2 \
+  UPSTREAM_REPO_URL=https://github.com/Alamofire/Alamofire.git
+# Outputs build/artifacts/*.xcframework.zip
 ```
 
-Then manually:
-- Upload zips as a new GitHub Release (`gh release create facebook-v11.0.1-cambly build/artifacts/*.xcframework.zip`)
-- Patch `Package.swift` (run the python script the same way the workflow does, or edit by hand)
+Compute checksums with `swift package compute-checksum`, then manually:
+- Upload zips as a new GitHub Release (`gh release create alamofire-5.10.2 --cleanup-tag build/artifacts/*.xcframework.zip`)
+- Patch `Package.swift` (run `.github/scripts/patch_package_swift.py` the same way the workflow does, or edit the `// === <vendor> ===` section by hand)
 - Commit + push
 
 ## Why a single xcframework slice per vendor
