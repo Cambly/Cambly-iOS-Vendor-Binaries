@@ -67,8 +67,14 @@ all: require-args build-xcframeworks zip checksums
 require-args:
 	@test -n "$(VENDOR)"  || { echo "❌ VENDOR is required, e.g. make all VENDOR=facebook VERSION=v11.0.1-cambly"; exit 1; }
 	@test -n "$(VERSION)" || { echo "❌ VERSION is required"; exit 1; }
-	@test -n "$(SCHEME_PRODUCT_PAIRS)" || { echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1; }
-	@test -n "$(BUILD_PROJECT_FLAG)"   || { echo "❌ BUILD_PROJECT_FLAG not set for VENDOR='$(VENDOR)'"; exit 1; }
+	@# Avoid `test -n "$(SCHEME_PRODUCT_PAIRS)"` here — that variable's value
+	@# embeds its own double quotes (so each scheme:product token survives shell
+	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
+	@# against the known list of ifeq blocks instead.
+	@case "$(VENDOR)" in \
+	  facebook|alamofire|lottie) : ;; \
+	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
+	esac
 
 clean:
 	rm -rf $(BUILD_DIR)
