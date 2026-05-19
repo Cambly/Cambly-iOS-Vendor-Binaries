@@ -82,27 +82,33 @@ jobs:
         # Flags explanation:
         # - `--platform ios` — without it, default is all Apple platforms
         #   including macOS, which fails the linker (GoogleSignIn is iOS-only).
-        # - `--xc-setting IPHONEOS_DEPLOYMENT_TARGET=17.0` — matches our
-        #   binary repo's Package.swift platform (.iOS(.v17)). Without this,
-        #   the generated xcodeproj uses upstream's old target (10.0) which
-        #   warns + may not autolink modern UIKit.
-        # - `--xc-setting CLANG_ENABLE_MODULES=YES` + `CLANG_MODULES_AUTOLINK=YES` —
-        #   GTMSessionFetcher's ObjC code does `#import <UIKit/UIKit.h>` and
-        #   `#import <Security/Security.h>`. With these settings, clang
-        #   auto-links the necessary system frameworks via module map. Without
-        #   them the generated xcodeproj doesn't link UIKit/Security and we
-        #   get "Undefined symbols ... UIDevice / SecTrustEvaluate / ..." at
-        #   link time.
+        # - `--xcconfig overrides.xcconfig` — override Xcode build settings
+        #   the generated xcodeproj uses. Specifically:
+        #     1. Bump IPHONEOS_DEPLOYMENT_TARGET from upstream's 9.0/10.0 to
+        #        17.0 (matches our consumer Package.swift's .iOS(.v17), kills
+        #        deployment-target-out-of-range warnings).
+        #     2. Force-link UIKit / Security / Foundation into all targets.
+        #        GTMSessionFetcher's ObjC code uses non-module `#import` for
+        #        these and clang module autolinking isn't reliable through
+        #        swift-create-xcframework's generated xcodeproj. Without the
+        #        explicit linker frameworks the link fails with undefined
+        #        symbols (UIDevice / SecTrustEvaluate / etc.). Setting
+        #        CLANG_ENABLE_MODULES=YES doesn't help — it breaks GoogleSignIn's
+        #        compile phase because its modulemap references headers via
+        #        paths relative to package root that don't resolve when modules
+        #        are turned on in the generated xcodeproj.
         # - Positional `GoogleSignIn` — only build that product (skip
         #   GoogleSignInSwift which Cambly doesn't use).
         run: |
           set -euo pipefail
           mkdir -p build/artifacts
+          cat > source/scxcf.xcconfig <<'XCCONFIG'
+          IPHONEOS_DEPLOYMENT_TARGET = 17.0
+          OTHER_LDFLAGS = $(inherited) -framework UIKit -framework Security -framework Foundation
+          XCCONFIG
           cd source
           swift-create-xcframework --platform ios \
-            --xc-setting IPHONEOS_DEPLOYMENT_TARGET=17.0 \
-            --xc-setting CLANG_ENABLE_MODULES=YES \
-            --xc-setting CLANG_MODULES_AUTOLINK=YES \
+            --xcconfig scxcf.xcconfig \
             --output ../build/artifacts/ \
             GoogleSignIn
           cd ..
