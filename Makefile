@@ -26,12 +26,16 @@ WORK_DIR = $(BUILD_DIR)/$(VENDOR)-$(VERSION)
 
 ifeq ($(VENDOR),facebook)
   UPSTREAM_REPO_URL ?= git@github.com:Cambly/facebook-ios-sdk.git
+  # Each scheme corresponds to a binary-production product injected by the
+  # facebook-prepare target's Package.swift overlay
+  # (.github/scripts/binary_build_overlay_facebook.py).
+  # Order: leaf deps first (less wasteful if a later target fails).
   PRODUCTS := FBSDKCoreKit_Basics LegacyCoreKit FacebookCore FBSDKCoreKit FBSDKLoginKit FacebookLogin
 endif
 
 # ─── Targets ────────────────────────────────────────────────────────────────
 
-.PHONY: all clean clone build-xcframeworks zip checksums require-args
+.PHONY: all clean clone facebook-prepare build-xcframeworks zip checksums require-args
 
 all: require-args build-xcframeworks zip checksums
 
@@ -46,13 +50,38 @@ clean:
 clone: require-args
 	mkdir -p $(BUILD_DIR)
 	test -d $(WORK_DIR) || git clone --depth 1 --branch $(VERSION) $(UPSTREAM_REPO_URL) $(WORK_DIR)
+	@# Per-vendor "prepare" hook: idempotent transformation of WORK_DIR contents
+	@# (removing conflicting xcworkspaces, applying Package.swift overlays, etc.)
+	@# Vendors with clean SPM packages can omit a *-prepare target; this guard
+	@# silently skips when there isn't one.
+	@if $(MAKE) -n $(VENDOR)-prepare >/dev/null 2>&1; then \
+	  $(MAKE) --no-print-directory $(VENDOR)-prepare; \
+	fi
+
+# Facebook-specific prep: force SPM mode + reshape products for binary distribution.
+#   1. Remove FacebookSDK.xcworkspace — without this, xcodebuild auto-picks it
+#      over Package.swift and our SPM-target scheme names fail to resolve.
+#   2. Remove all *.xcodeproj — many sub-module xcodeprojs would also confuse
+#      auto-detection.
+#   3. Overlay Package.swift `products: [...]` to expose 6 dynamic single-target
+#      products. See .github/scripts/binary_build_overlay_facebook.py.
+facebook-prepare:
+	@echo "→ facebook-prepare: forcing SPM mode + overlaying Package.swift in $(WORK_DIR)"
+	rm -rf $(WORK_DIR)/FacebookSDK.xcworkspace
+	find $(WORK_DIR) -type d -name "*.xcodeproj" -prune -exec rm -rf {} +
+	python3 $(CURDIR)/.github/scripts/binary_build_overlay_facebook.py $(WORK_DIR)/Package.swift
 
 build-xcframeworks: clone
 	mkdir -p $(ARTIFACTS_DIR)
+	@# Pass `-workspace .swiftpm/xcode/package.xcworkspace` explicitly so xcodebuild
+	@# uses the SwiftPM auto-generated workspace (auto-created on first invocation
+	@# from a Package.swift directory). This is the only way to get scheme=product
+	@# names matching what our overlay declared.
 	@for product in $(PRODUCTS); do \
 	  echo "🔨 Building $$product for iOS device + simulator..."; \
 	  rm -rf $(BUILD_DIR)/$$product-iOS-device.xcarchive $(BUILD_DIR)/$$product-iOS-sim.xcarchive; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
+	    -workspace .swiftpm/xcode/package.xcworkspace \
 	    -scheme $$product \
 	    -destination "generic/platform=iOS" \
 	    -archivePath $(CURDIR)/$(BUILD_DIR)/$$product-iOS-device.xcarchive \
@@ -61,6 +90,7 @@ build-xcframeworks: clone
 	    BUILD_LIBRARY_FOR_DISTRIBUTION=YES \
 	    -quiet ) || exit 1; \
 	  ( cd $(WORK_DIR) && xcodebuild archive \
+	    -workspace .swiftpm/xcode/package.xcworkspace \
 	    -scheme $$product \
 	    -destination "generic/platform=iOS Simulator" \
 	    -archivePath $(CURDIR)/$(BUILD_DIR)/$$product-iOS-sim.xcarchive \
@@ -70,9 +100,17 @@ build-xcframeworks: clone
 	    -quiet ) || exit 1; \
 	  echo "📦 Creating $$product.xcframework..."; \
 	  rm -rf $(ARTIFACTS_DIR)/$$product.xcframework; \
+	  device_fwk=$$(find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "$$product.framework" | head -n 1); \
+	  sim_fwk=$$(find $(BUILD_DIR)/$$product-iOS-sim.xcarchive -type d -name "$$product.framework" | head -n 1); \
+	  if [ -z "$$device_fwk" ] || [ -z "$$sim_fwk" ]; then \
+	    echo "❌ Could not locate $$product.framework in archive(s)"; \
+	    echo "device archive contents:"; find $(BUILD_DIR)/$$product-iOS-device.xcarchive -type d -name "*.framework"; \
+	    echo "sim archive contents:";    find $(BUILD_DIR)/$$product-iOS-sim.xcarchive    -type d -name "*.framework"; \
+	    exit 1; \
+	  fi; \
 	  xcodebuild -create-xcframework \
-	    -framework $(BUILD_DIR)/$$product-iOS-device.xcarchive/Products/Library/Frameworks/$$product.framework \
-	    -framework $(BUILD_DIR)/$$product-iOS-sim.xcarchive/Products/Library/Frameworks/$$product.framework \
+	    -framework $$device_fwk \
+	    -framework $$sim_fwk \
 	    -output $(ARTIFACTS_DIR)/$$product.xcframework || exit 1; \
 	done
 
