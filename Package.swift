@@ -122,8 +122,8 @@ let package = Package(
     // URLs + checksums patched by build-devicekit.yml on each release.
     .binaryTarget(
       name: "DeviceKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/DeviceKit.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/devicekit-5.7.0/DeviceKit.xcframework.zip",
+      checksum: "8ddce0ea06a95f4ef97389b5e2c506c6cd5131a55aabafd42b12f10adc9e51a2"
     ),
   ]
 )
