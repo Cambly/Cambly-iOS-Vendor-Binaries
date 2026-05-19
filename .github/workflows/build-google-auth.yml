@@ -78,11 +78,15 @@ jobs:
         # GoogleSignIn-iOS exposes 2 products (GoogleSignIn, GoogleSignInSwift);
         # transitive deps (AppAuth/GTMAppAuth/GTMSessionFetcher) get statically
         # linked into the produced frameworks rather than emitted separately.
+        #
+        # `--platform ios` is critical — without it, the tool defaults to
+        # building for all Apple platforms (including macOS), which fails the
+        # linker because GoogleSignIn is iOS-only.
         run: |
           set -euo pipefail
           mkdir -p build/artifacts
           cd source
-          swift-create-xcframework --output ../build/artifacts/
+          swift-create-xcframework --platform ios --output ../build/artifacts/
           cd ..
           echo "--- build/artifacts after build:"
           ls -la build/artifacts/
