@@ -42,18 +42,18 @@ let package = Package(
     // — SwiftPM resolve will fail until the first workflow run patches them.
     .binaryTarget(
       name: "FBSDKLoginKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKLoginKit.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKLoginKit.xcframework.zip",
+      checksum: "d3aeffd6b1ff2317351691ce5a1edf8da8f98471f2517d0778157f93d01b5bd2"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKCoreKit.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit.xcframework.zip",
+      checksum: "1ad86bedfdbf8ee0052a9bf8f691876e469db5e5de6d5e23052bd64723757c2c"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit_Basics",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/FBSDKCoreKit_Basics.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit_Basics.xcframework.zip",
+      checksum: "cdb427ed40c5466e36152808c6ab2e92cd3a7dfb9f150bef7d132cbfdf6c4682"
     ),
   ]
 )
