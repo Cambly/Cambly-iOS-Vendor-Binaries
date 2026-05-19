@@ -113,8 +113,8 @@ let package = Package(
     // URLs + checksums patched by build-keychainaccess.yml on each release.
     .binaryTarget(
       name: "KeychainAccess",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/PENDING/KeychainAccess.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/keychainaccess-v4.2.2/KeychainAccess.xcframework.zip",
+      checksum: "5f90fa1664e30e84336d31528fb966486c54dea8ba3057201b0cc97c0f649595"
     ),
 
     // === devicekit ===
