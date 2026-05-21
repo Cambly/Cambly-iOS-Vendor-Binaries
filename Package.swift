@@ -206,8 +206,8 @@ let package = Package(
     // URLs + checksums patched by build-iterable.yml on each release.
     .binaryTarget(
       name: "IterableSDK",
-      url: "PENDING",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/iterable-6.7.1/IterableSDK.xcframework.zip",
+      checksum: "42a61845ec6f09415d76db72dc66e0e4ef48f33230fcda7b64cc9aefa129287c"
     ),
 
     // === starscream ===
