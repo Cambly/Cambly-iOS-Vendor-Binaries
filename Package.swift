@@ -197,8 +197,8 @@ let package = Package(
     // URLs + checksums patched by build-posthog.yml on each release.
     .binaryTarget(
       name: "PostHog",
-      url: "PENDING",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/posthog-3.58.3/PostHog.xcframework.zip",
+      checksum: "492a3d779e23b4a664bebea426b23bd4c1cf9dba1ddcdd7b6bb0a0c13cd5e5c0"
     ),
 
     // === iterable ===
