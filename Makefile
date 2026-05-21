@@ -92,6 +92,15 @@ ifeq ($(VENDOR),posthog)
   BUILD_PROJECT_FLAG := -project PostHog.xcodeproj
   SCHEME_PRODUCT_PAIRS := \
     "PostHog:PostHog"
+  # Override default WORK_DIR (= $(BUILD_DIR)/$(VENDOR)-$(VERSION)) for posthog:
+  # PostHog.xcodeproj references nested PostHogExample*.xcodeproj projects, and
+  # one of them (PostHogExampleWithSPM.xcodeproj) declares a Local Swift Package
+  # reference pointing at `../posthog-ios`. xcodebuild requires that sibling
+  # directory to exist at SPM resolution time, even when archiving the unrelated
+  # `PostHog` scheme — without this override the build fails with
+  # "Could not resolve package dependencies: the package at 'build/posthog-ios'
+  # cannot be accessed". So clone into the upstream's natural directory name.
+  WORK_DIR := $(BUILD_DIR)/posthog-ios
 endif
 
 ifeq ($(VENDOR),iterable)
