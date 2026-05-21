@@ -73,6 +73,44 @@ ifeq ($(VENDOR),devicekit)
     "DeviceKit:DeviceKit"
 endif
 
+ifeq ($(VENDOR),sdwebimage)
+  UPSTREAM_REPO_URL ?= git@github.com:SDWebImage/SDWebImage.git
+  BUILD_PROJECT_FLAG := -project SDWebImage.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "SDWebImage:SDWebImage"
+endif
+
+ifeq ($(VENDOR),sentry)
+  UPSTREAM_REPO_URL ?= git@github.com:getsentry/sentry-cocoa.git
+  BUILD_PROJECT_FLAG := -project Sentry.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "Sentry:Sentry"
+endif
+
+ifeq ($(VENDOR),posthog)
+  UPSTREAM_REPO_URL ?= git@github.com:PostHog/posthog-ios.git
+  BUILD_PROJECT_FLAG := -project PostHog.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "PostHog:PostHog"
+endif
+
+ifeq ($(VENDOR),iterable)
+  UPSTREAM_REPO_URL ?= git@github.com:Iterable/iterable-swift-sdk.git
+  BUILD_PROJECT_FLAG := -project swift-sdk.xcodeproj
+  # Scheme name `swift-sdk` produces `IterableSDK.framework` (the buildable
+  # target inside is named differently from the scheme — verified via the
+  # scheme's BuildableName attribute).
+  SCHEME_PRODUCT_PAIRS := \
+    "swift-sdk:IterableSDK"
+endif
+
+ifeq ($(VENDOR),starscream)
+  UPSTREAM_REPO_URL ?= git@github.com:daltoniam/Starscream.git
+  BUILD_PROJECT_FLAG := -project Starscream.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "Starscream:Starscream"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
 .PHONY: all clean clone build-xcframeworks zip checksums require-args
@@ -87,7 +125,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie|keychainaccess|devicekit) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 

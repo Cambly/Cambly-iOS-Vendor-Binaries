@@ -1,0 +1,102 @@
+name: Build Iterable
+
+# Manual trigger only. To cut a new Iterable release:
+#   Actions → Build Iterable → Run workflow → (set version) → Run.
+#
+# Produces a GitHub Release tagged `iterable-<version>` containing the
+# IterableSDK xcframework zip. Then patches Package.swift's
+# `// === iterable ===` section with the new url + checksum and commits
+# it to main.
+#
+# Note: the upstream xcodeproj scheme is `swift-sdk` but it builds the
+# `IterableSDK.framework` target — see Makefile SCHEME_PRODUCT_PAIRS for
+# how that mapping is handled.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on Iterable/iterable-swift-sdk (e.g. 6.7.1)"
+        required: true
+        type: string
+        default: 6.7.1
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build IterableSDK xcframework via Makefile
+        run: |
+          make all VENDOR=iterable VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/Iterable/iterable-swift-sdk.git
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: iterable
+          ASSETS_TAG: iterable-${{ inputs.version }}
+          IterableSDK_SHA: ${{ steps.checksums.outputs.IterableSDK_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Iterable binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="iterable-${{ inputs.version }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframework for Iterable/iterable-swift-sdk@${{ inputs.version }}. Built from upstream's \`swift-sdk\` xcodeproj scheme (which builds IterableSDK.framework) with BUILD_LIBRARY_FOR_DISTRIBUTION=YES."

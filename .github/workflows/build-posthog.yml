@@ -1,0 +1,97 @@
+name: Build PostHog
+
+# Manual trigger only. To cut a new PostHog release:
+#   Actions → Build PostHog → Run workflow → (set version) → Run.
+#
+# Produces a GitHub Release tagged `posthog-<version>` containing the PostHog
+# xcframework zip. Then patches Package.swift's `// === posthog ===` section
+# with the new url + checksum and commits it to main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on PostHog/posthog-ios (e.g. 3.58.3)"
+        required: true
+        type: string
+        default: 3.58.3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Build PostHog xcframework via Makefile
+        run: |
+          make all VENDOR=posthog VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/PostHog/posthog-ios.git
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: posthog
+          ASSETS_TAG: posthog-${{ inputs.version }}
+          PostHog_SHA: ${{ steps.checksums.outputs.PostHog_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update PostHog binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="posthog-${{ inputs.version }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframework for PostHog/posthog-ios@${{ inputs.version }}. Built from upstream's \`PostHog\` xcodeproj scheme with BUILD_LIBRARY_FOR_DISTRIBUTION=YES."

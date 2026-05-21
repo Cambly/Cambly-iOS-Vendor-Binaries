@@ -68,6 +68,54 @@ let package = Package(
       name: "DeviceKit",
       targets: ["DeviceKit"]
     ),
+
+    // === sdwebimage ===
+    // Built from SDWebImage/SDWebImage@5.21.7 via its `SDWebImage.xcodeproj`
+    // scheme `SDWebImage` (the dynamic-framework scheme; the repo also has
+    // `SDWebImage XCFramework` / `SDWebImage static` / `SDWebImageMapKit`
+    // siblings which we don't need).
+    .library(
+      name: "SDWebImage",
+      targets: ["SDWebImage"]
+    ),
+
+    // === sentry ===
+    // Built from getsentry/sentry-cocoa@9.13.0 via its `Sentry.xcodeproj`
+    // scheme `Sentry`. We don't ship the `SentrySwiftUI` sibling — Cambly
+    // only imports the core `Sentry` module.
+    .library(
+      name: "Sentry",
+      targets: ["Sentry"]
+    ),
+
+    // === posthog ===
+    // Built from PostHog/posthog-ios@3.58.3 via its `PostHog.xcodeproj`
+    // scheme `PostHog`.
+    .library(
+      name: "PostHog",
+      targets: ["PostHog"]
+    ),
+
+    // === iterable ===
+    // Built from Iterable/iterable-swift-sdk@6.7.1 via its `swift-sdk.xcodeproj`
+    // scheme `swift-sdk`, which builds the `IterableSDK.framework` target
+    // (scheme name and framework name don't match here — see Makefile
+    // SCHEME_PRODUCT_PAIRS for how that's handled). The repo also defines a
+    // `notification-extension` target producing `IterableAppExtensions.framework`,
+    // but Cambly-Swift's notification extensions don't link Iterable today, so
+    // we ship only `IterableSDK`.
+    .library(
+      name: "IterableSDK",
+      targets: ["IterableSDK"]
+    ),
+
+    // === starscream ===
+    // Built from daltoniam/Starscream@4.0.8 via its `Starscream.xcodeproj`
+    // scheme `Starscream`.
+    .library(
+      name: "Starscream",
+      targets: ["Starscream"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -124,6 +172,51 @@ let package = Package(
       name: "DeviceKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/devicekit-5.8.0/DeviceKit.xcframework.zip",
       checksum: "b3394b6d9d47d585c4a4996d58693e72546f3d50f91dc8e1424992095e3de237"
+    ),
+
+    // === sdwebimage ===
+    // Source: SDWebImage/SDWebImage (public upstream, no fork)
+    // URLs + checksums patched by build-sdwebimage.yml on each release.
+    .binaryTarget(
+      name: "SDWebImage",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === sentry ===
+    // Source: getsentry/sentry-cocoa (public upstream, no fork)
+    // URLs + checksums patched by build-sentry.yml on each release.
+    .binaryTarget(
+      name: "Sentry",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === posthog ===
+    // Source: PostHog/posthog-ios (public upstream, no fork)
+    // URLs + checksums patched by build-posthog.yml on each release.
+    .binaryTarget(
+      name: "PostHog",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === iterable ===
+    // Source: Iterable/iterable-swift-sdk (public upstream, no fork)
+    // URLs + checksums patched by build-iterable.yml on each release.
+    .binaryTarget(
+      name: "IterableSDK",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+
+    // === starscream ===
+    // Source: daltoniam/Starscream (public upstream, no fork)
+    // URLs + checksums patched by build-starscream.yml on each release.
+    .binaryTarget(
+      name: "Starscream",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

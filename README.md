@@ -7,14 +7,19 @@ Versions tracked:
 | Vendor product | Upstream source | Current release tag | Build via |
 |---|---|---|---|
 | `FBSDKLoginKit` (+ `FBSDKCoreKit` + `FBSDKCoreKit_Basics` transitive) | `Cambly/facebook-ios-sdk@v11.0.1-cambly` (private Cambly fork) | `facebook-v11.0.1-cambly` | `FBSDK*-Dynamic` schemes in `FacebookSDK.xcworkspace` |
-| `Alamofire` | `Alamofire/Alamofire@5.10.2` | `alamofire-5.10.2` | `Alamofire iOS` scheme in `Alamofire.xcodeproj` |
-| `Lottie` | `airbnb/lottie-ios@4.5.2` | `lottie-4.5.2` | `Lottie (iOS)` scheme in `Lottie.xcodeproj` |
+| `Alamofire` | `Alamofire/Alamofire@5.12.0` | `alamofire-5.12.0` | `Alamofire iOS` scheme in `Alamofire.xcodeproj` |
+| `Lottie` | `airbnb/lottie-ios@4.6.0` | `lottie-4.6.0` | `Lottie (iOS)` scheme in `Lottie.xcodeproj` |
 | `KeychainAccess` | `kishikawakatsumi/KeychainAccess@v4.2.2` | `keychainaccess-v4.2.2` | `KeychainAccess` scheme in `Lib/KeychainAccess.xcodeproj` |
-| `DeviceKit` | `devicekit/DeviceKit@5.7.0` | `devicekit-5.7.0` | `DeviceKit` scheme in `DeviceKit.xcodeproj` |
+| `DeviceKit` | `devicekit/DeviceKit@5.8.0` | `devicekit-5.8.0` | `DeviceKit` scheme in `DeviceKit.xcodeproj` |
+| `SDWebImage` | `SDWebImage/SDWebImage@5.21.7` | `sdwebimage-5.21.7` | `SDWebImage` scheme in `SDWebImage.xcodeproj` |
+| `Sentry` | `getsentry/sentry-cocoa@9.13.0` | `sentry-9.13.0` | `Sentry` scheme in `Sentry.xcodeproj` |
+| `PostHog` | `PostHog/posthog-ios@3.58.3` | `posthog-3.58.3` | `PostHog` scheme in `PostHog.xcodeproj` |
+| `IterableSDK` | `Iterable/iterable-swift-sdk@6.7.1` | `iterable-6.7.1` | `swift-sdk` scheme in `swift-sdk.xcodeproj` (scheme builds `IterableSDK.framework`) |
+| `Starscream` | `daltoniam/Starscream@4.0.8` | `starscream-4.0.8` | `Starscream` scheme in `Starscream.xcodeproj` |
 
 Cambly-Swift pins this repo by `revision: <vendor>-<version>` (typically the most recently bumped vendor's tag — the commit at that tag carries all vendors' current URLs/checksums, since each workflow patches the shared `Package.swift`).
 
-More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) is currently **blocked**: those packages are SPM-only (no upstream xcodeproj), and our xcodeproj-mode pipeline doesn't fit. See the abandoned `swift-create-xcframework` attempt in git history (reverted in `113f18b`) for the negative result.
+More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) is currently **blocked**: those packages are SPM-only (no upstream xcodeproj), and our xcodeproj-mode pipeline doesn't fit. Other SPM-only candidates in Cambly-Swift today (`InstantSearch`, `BSON`, `Nantes`, `Reusable`, `MultiSlider`) face the same constraint — they would need a `swift-create-xcframework` based pipeline; see the abandoned attempt for Google auth in git history (reverted in `113f18b`) for the negative result and the kinds of issues that path runs into.
 
 ## How it works
 
