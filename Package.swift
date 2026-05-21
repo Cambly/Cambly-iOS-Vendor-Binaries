@@ -104,8 +104,8 @@ let package = Package(
     // URLs + checksums patched by build-lottie.yml workflow on each release.
     .binaryTarget(
       name: "Lottie",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/lottie-4.5.2/Lottie.xcframework.zip",
-      checksum: "d725b443b4805f608842b2e352a6788970f58dec65a6ada050c5649587788c2d"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/lottie-4.6.0/Lottie.xcframework.zip",
+      checksum: "d88114888426151744794732c179995f4fa5f59126c847de96c69eff6413dad8"
     ),
 
     // === keychainaccess ===
