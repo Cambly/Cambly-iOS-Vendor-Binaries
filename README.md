@@ -77,7 +77,36 @@ Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section
    - Release tag in the `gh release create` step
 
    Keep `concurrency: { group: package-update, cancel-in-progress: false }` and the `git fetch origin main && git rebase origin/main` retry loop — they prevent race-on-push when two vendor workflows touch `Package.swift` in close succession.
-4. **Cambly-Swift** — in `project_files/shared_swift_packages_dependencies.yml` (and any per-target SPM dep yml), replace `package: <UpstreamSPMPackage> / product: X` with `package: CamblyVendorBinaries / product: X`. Remove the old `<UpstreamSPMPackage>` entry from `swift_packages.yml`. Bump the `revision:` pin to the new vendor's tag.
+4. **Cambly-Swift** —
+
+   a. **Rename package refs.** In every `project_files/*.yml` that references the upstream package, replace `package: <UpstreamSPMPackage> / product: X` with `package: CamblyVendorBinaries / product: X`. Remove the old `<UpstreamSPMPackage>` entry from `swift_packages.yml`. Bump the `revision:` pin to the new vendor's tag.
+
+   b. **Audit every app target for direct embed declarations.** ⚠️ *This is the load-bearing step.* When a vendor moves from source-form SPM to a binary xcframework, every `application` target that uses the vendor (even transitively through an intermediate framework like `Networking` or `Syntax`) must declare the binary product **directly** in its own `dependencies:` list — not only on the intermediate framework. SPM auto-embeds binary xcframeworks into `.app/Frameworks/` *only* for products that are direct deps of the app target; transitive declarations through framework targets are silently link-but-not-embed, and the app crashes on real devices at launch with `dyld[..]: Library not loaded: @rpath/X.framework/X`. Source-form deps don't have this issue (the consumer framework statically absorbs the compiled code), which is what hid the gap before vendoring.
+
+   The 4 places to update (Cambly-Swift has 7 app targets total — 4 production apps + 3 preview hosts):
+
+   | App target | yml file | Used by |
+   |---|---|---|
+   | `Cambly` | `shared_swift_packages_dependencies.yml` (`SharedSPMDependencies` template) | Adults |
+   | `CamblyKids` | `shared_swift_packages_dependencies.yml` (same template) | Kids |
+   | `Lexicon` | `lexicon_target.yml` | Lexicon |
+   | `ComponentsApp` | `components_app.yml` | Components preview host |
+   | `SyntaxApp` | `syntax_app.yml` | Syntax preview host |
+   | `SyntaxSwiftUIApp` | `syntax_swiftui_app.yml` | Syntax SwiftUI preview host |
+   | `LexiconComponentsApp` | `lexicon_components_app.yml` | Lexicon Components preview host |
+
+   For each app target that (transitively) imports the new vendor, add:
+
+   ```yml
+   - package: CamblyVendorBinaries
+     product: <ProductName>
+   ```
+
+   Do **not** add `embed: true` / `codeSign: true` flags — SPM handles auto-embed for `binaryTarget` products itself, and explicit flags actually conflict with that and break the Copy Frameworks build phase (caught us on Lottie in PR #4040).
+
+   c. **Run the lint:** `python3 scripts/lint_binary_embeds.py` walks every app target's transitive deps and fails if any binary product is used but not declared directly. CI also runs this as the `check-binary-embeds` job; you can run it locally before pushing.
+
+   d. **Verify on a real device.** A successful `xcodebuild build` on iOS Simulator is **not sufficient** — simulator dyld searches `Build/Products/.../PackageFrameworks/` in addition to `.app/Frameworks/`, masking missing embeds. The crash only surfaces on a physical device. Plug in a phone, install + launch each app (adults / kids / lexicon) at least once before merging. The CI lint above catches the obvious cases at PR time but isn't a complete substitute for an on-device launch.
 
    ⚠️ **Watch for single-line `- package: X` shortcuts** in yml — xcodegen lets you omit `product:` when it matches the package name. Those break after rename to `CamblyVendorBinaries` (no product named `CamblyVendorBinaries` exists). Always add an explicit `product: <Original>` line after the rename. (Caught us on `login.yml` for DeviceKit.)
 
