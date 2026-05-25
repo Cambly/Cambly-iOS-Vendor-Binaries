@@ -155,6 +155,18 @@ build-xcframeworks: clone
 	@# survive shell word-splitting because the surrounding double-quotes are still
 	@# present in the substituted text; `for pair in ...` then treats each quoted
 	@# token as a single iteration.
+	@#
+	@# Sanitize step (inside the loop, between archive and -create-xcframework):
+	@# Some upstream xcodeprojs add dev-time scripts/sources to the Copy Bundle
+	@# Resources phase (e.g. PostHog ships `generate-pb-c.sh`, a protoc-c codegen
+	@# helper for PLCrashReporter). Source-form SwiftPM excludes them via
+	@# Package.swift `exclude:`, but xcodebuild archive obeys the xcodeproj and
+	@# copies them into <Product>.framework/. If they reach the App's Frameworks/
+	@# dir, App Store Connect rejects the IPA with error 90035 "Code object is
+	@# not signed at all" — altool treats any non-Mach-O file inside a framework
+	@# bundle as nested code that must be signed. Stripping them here keeps each
+	@# .framework canonical: Mach-O + Info.plist + Headers/ + Modules/ +
+	@# Resources/ (+ PrivateHeaders/, PrivacyInfo.xcprivacy when present).
 	@for pair in $(SCHEME_PRODUCT_PAIRS); do \
 	  scheme="$${pair%%:*}"; \
 	  product="$${pair##*:}"; \
@@ -192,7 +204,16 @@ build-xcframeworks: clone
 	  fi; \
 	  echo "  device: $$device_fwk"; \
 	  echo "  sim:    $$sim_fwk"; \
-	  echo "  device framework contents:"; \
+	  for fwk in "$$device_fwk" "$$sim_fwk"; do \
+	    echo "🧹 Stripping dev-time files mistakenly bundled in $$fwk (if any)..."; \
+	    find "$$fwk" \( \
+	      -name "*.sh" -o -name "*.py" -o -name "*.rb" -o -name "*.pl" -o -name "*.bash" \
+	      -o -name "Makefile" -o -name "Rakefile" -o -name "Gemfile*" -o -name "Podfile*" \
+	      -o -name "*.swift" -o -name "*.c" -o -name "*.m" -o -name "*.mm" \
+	      -o -name "*.cpp" -o -name "*.cc" -o -name "*.proto" -o -name "*.h.in" \
+	    \) -print -delete; \
+	  done; \
+	  echo "  device framework contents (post-sanitize):"; \
 	  find "$$device_fwk" -maxdepth 3 2>/dev/null | sed 's|^|    |'; \
 	  xcodebuild -create-xcframework \
 	    -framework $$device_fwk \
