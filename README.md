@@ -27,6 +27,31 @@ A single `Package.swift` declares one `.library` product per vendor, each backed
 
 Vendor sections inside `Package.swift` (both in `products:` and `targets:`) are delimited by `// === <vendor-key> ===` marker comments. The marker convention is load-bearing: `.github/scripts/patch_package_swift.py` uses it to locate the section to rewrite on each release.
 
+## Operational gotchas
+
+Two things that have bitten this repo's release flow. Read before bumping or rebuilding any vendor.
+
+### The Makefile strips dev-time files from every `.framework`
+
+Framework bundles built via `xcodebuild archive` honor whatever the upstream xcodeproj declares in its **Copy Bundle Resources** phase. Some upstream projects accidentally land dev-time scripts/sources there — e.g. PostHog 3.58.3 ships `generate-pb-c.sh`, a PLCrashReporter `protoc-c` codegen helper. Source-form SwiftPM excludes such files via `Package.swift`'s `exclude:`, but our pipeline doesn't honor that — it obeys the xcodeproj.
+
+If such a file reaches the consuming app's `Frameworks/` dir, **App Store Connect rejects the IPA with error 90035 "Code object is not signed at all"**. `altool` treats any non-Mach-O file inside a framework bundle as nested code that must be signed, and a shell script (or `.swift` / `.c` / `Makefile` / etc.) can't be signed. The reject only surfaces at TestFlight/App Store upload — simulator builds and even on-device dev builds don't trip it.
+
+The Makefile's `build-xcframeworks` target therefore strips a broad list of dev-time file types (`*.sh / *.py / *.swift / *.c / Makefile / ...`) from each `.framework` slice before `-create-xcframework`. Canonical framework contents (`Mach-O / Info.plist / Headers/ / Modules/ / PrivateHeaders/ / Resources/ / PrivacyInfo.xcprivacy`) are not matched. If you add a new vendor and discover the sanitize step removes something it shouldn't, narrow the pattern — don't disable the step.
+
+### Don't reuse a release tag once consumers have pulled it
+
+Consumers cache `binaryTarget` downloads in `~/Library/Caches/org.swift.swiftpm/artifacts/`, **keyed by URL**. If you delete-and-recreate a release tag with different zip contents (the per-vendor workflows do `gh release delete --cleanup-tag && gh release create`), every consumer with a populated cache will fall into one of two bad states:
+
+1. **`checksum of downloaded artifact ... does not match checksum specified by the manifest`** — SwiftPM serves the old zip from cache, but `Package.swift` advertises the new sha256.
+2. **`binary target 'X' could not be mapped to an artifact with expected name 'X'`** — after a partial cache clear, an empty `<Product>/` directory remains in `<DerivedData>/SourcePackages/artifacts/cambly-ios-vendor-binaries/`.
+
+Recovery requires every developer (and CI cache layer) to manually `rm -rf` the stale cache entries. This bit us hard on `posthog-3.58.3` — see PR Cambly-Swift#4081.
+
+**Rule**: the first release of a given upstream version uses `<vendor>-<version>` as the tag. Any rebuild at the same upstream version (e.g. fixing a packaging bug, not a code change) must go out under a fresh tag — `<vendor>-<version>-<suffix>` is fine (`posthog-3.58.3-codesign-fix`, `lottie-4.6.0-r2`). A new tag means a new URL, which means a fresh cache key, which means every consumer auto-redownloads cleanly with zero local intervention.
+
+The per-vendor workflows currently take `version` as input and reuse the tag — that's correct for the **first** build of a given upstream version. For a rebuild, either tweak the workflow (one-off) to take a separate tag suffix, or do it by hand: trigger the workflow to regenerate the zip (it'll overwrite the original `<vendor>-<version>` release; that's OK since you're abandoning it), then manually `gh release create <vendor>-<version>-<suffix> --target main <built-zip>` and patch `Package.swift` to point the binaryTarget url at the new tag.
+
 ## Upgrading an existing vendor
 
 Each vendor has its own `workflow_dispatch` workflow in **Actions**.
