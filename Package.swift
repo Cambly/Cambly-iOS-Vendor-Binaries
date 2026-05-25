@@ -198,7 +198,7 @@ let package = Package(
     .binaryTarget(
       name: "PostHog",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/posthog-3.58.3/PostHog.xcframework.zip",
-      checksum: "492a3d779e23b4a664bebea426b23bd4c1cf9dba1ddcdd7b6bb0a0c13cd5e5c0"
+      checksum: "51562848b8fbd05576ab0c74dbe3a316d4ddf32e9d3f9b1cbd056e78ed711251"
     ),
 
     // === iterable ===
