@@ -67,10 +67,17 @@ jobs:
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        # skip_provisioning_profiles:true — xcframework signing only needs the
+        # Apple Distribution certificate (installed into keychain by this step);
+        # provisioning profiles are for .ipa signing and are not required here.
+        # Without this flag, match errors out at the profile-lookup phase if the
+        # Signing repo doesn't have a profile matching the given app_identifier,
+        # even though the certificate install succeeded.
         run: |
           fastlane run sync_code_signing \
             type:appstore \
             readonly:true \
+            skip_provisioning_profiles:true \
             git_url:"git@github.com:Cambly/Cambly-Swift-Signing.git" \
             app_identifier:com.cambly.Cambly
           echo "--- codesign identities available after match:"
