@@ -122,9 +122,9 @@ endif
 
 # ─── Targets ────────────────────────────────────────────────────────────────
 
-.PHONY: all clean clone build-xcframeworks zip checksums require-args
+.PHONY: all clean clone build-xcframeworks sign-xcframeworks zip checksums require-args
 
-all: require-args build-xcframeworks zip checksums
+all: require-args build-xcframeworks sign-xcframeworks zip checksums
 
 require-args:
 	@test -n "$(VENDOR)"  || { echo "❌ VENDOR is required, e.g. make all VENDOR=facebook VERSION=v11.0.1-cambly"; exit 1; }
@@ -221,7 +221,28 @@ build-xcframeworks: clone
 	    -output $(ARTIFACTS_DIR)/$$product.xcframework || exit 1; \
 	done
 
-zip: build-xcframeworks
+# Sign each .xcframework with the team's Apple Distribution identity before
+# zipping. Required by Apple for SDKs on the "commonly used third-party SDK"
+# list (Facebook / Lottie / Realm / SDWebImage / Starscream — caught us when
+# ITMS-91065 rejected Lexicon 1.2.6, 2026-05-27). Signs the bundle as a whole
+# (Apple's documented path; writes _CodeSignature/ at the bundle root + a
+# per-slice signature) so consumers can verify origin with `codesign -dv X.xcframework`.
+#
+# SIGNING_IDENTITY env/make-var is required. CI passes it from
+# secrets.SIGNING_IDENTITY; locally:
+#   make sign-xcframeworks VENDOR=lottie VERSION=4.6.0 \
+#     SIGNING_IDENTITY="Apple Distribution: Cambly Inc. (ZNP9AYBP23)"
+#
+# --force allows re-running over an already-signed bundle (workflow re-runs).
+sign-xcframeworks: build-xcframeworks
+	@test -n "$(SIGNING_IDENTITY)" || { echo "❌ SIGNING_IDENTITY required (env or make var)"; exit 1; }
+	@for product in $(PRODUCTS_LIST); do \
+	  echo "🔏 Signing $$product.xcframework with: $(SIGNING_IDENTITY)"; \
+	  codesign --force --timestamp -v --sign "$(SIGNING_IDENTITY)" \
+	    $(ARTIFACTS_DIR)/$$product.xcframework; \
+	done
+
+zip: sign-xcframeworks
 	@cd $(ARTIFACTS_DIR) && for product in $(PRODUCTS_LIST); do \
 	  echo "🗜  Zipping $$product.xcframework..."; \
 	  rm -f $$product.xcframework.zip; \
