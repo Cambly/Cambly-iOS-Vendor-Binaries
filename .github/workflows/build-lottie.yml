@@ -39,7 +39,41 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build Lottie xcframework via Makefile
+      # ─── SDK Signature steps (ITMS-91065 fix) ───────────────────────────
+      # Apple requires xcframeworks of "commonly used third-party SDKs" (Lottie
+      # is on that list) to be signed with the team's Apple Distribution
+      # identity. The signing identity comes from Cambly-Swift-Signing repo
+      # via fastlane match, reusing the same machine-user (`cambly-machine-user-ios`)
+      # SSH key that Cambly-Swift's CircleCI uses. ssh-agent is started here so
+      # the SSH-form git_url in `sync_code_signing` can clone the encrypted
+      # signing repo.
+      #
+      # After this step runs, the runner's default keychain holds:
+      #   Apple Distribution: Cambly Inc. (ZNP9AYBP23)
+      # which the Makefile's `sign-xcframeworks` target then uses via codesign.
+      - name: Set up SSH agent (Cambly-Swift-Signing access)
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+
+      - name: Install fastlane
+        run: gem install fastlane --no-document
+
+      - name: Sync Apple Distribution cert from Cambly-Swift-Signing
+        env:
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+        run: |
+          fastlane run sync_code_signing \
+            type:appstore \
+            readonly:true \
+            git_url:"git@github.com:Cambly/Cambly-Swift-Signing.git" \
+            app_identifier:com.cambly.Cambly
+          echo "--- codesign identities available after match:"
+          security find-identity -v -p codesigning
+
+      - name: Build + sign Lottie xcframework via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=lottie VERSION=${{ inputs.version }} \
             UPSTREAM_REPO_URL=https://github.com/airbnb/lottie-ios.git
