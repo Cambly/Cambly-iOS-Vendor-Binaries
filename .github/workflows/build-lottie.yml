@@ -11,6 +11,11 @@ on:
         required: true
         type: string
         default: 4.5.2
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version (e.g. adding SDK signature). Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -93,7 +98,7 @@ jobs:
       - name: Patch Package.swift
         env:
           VENDOR: lottie
-          ASSETS_TAG: lottie-${{ inputs.version }}
+          ASSETS_TAG: lottie-${{ inputs.version }}${{ inputs.tag_suffix }}
           Lottie_SHA: ${{ steps.checksums.outputs.Lottie_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
@@ -122,7 +127,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="lottie-${{ inputs.version }}"
+          tag="lottie-${{ inputs.version }}${{ inputs.tag_suffix }}"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \
