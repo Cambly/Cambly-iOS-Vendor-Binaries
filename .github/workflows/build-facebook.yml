@@ -16,6 +16,11 @@ on:
         required: true
         type: string
         default: v11.0.1-cambly
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version (e.g. adding SDK signature). Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write   # commit Package.swift + create release + upload assets
@@ -50,10 +55,18 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build all xcframeworks via Makefile
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign all xcframeworks via Makefile
         # CI clones the Cambly fork over HTTPS using SOURCE_REPO_TOKEN (no SSH
         # keys on the macos-15 runner). Local devs use the SSH default in the
         # Makefile.
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=facebook VERSION=${{ inputs.version }} \
             UPSTREAM_REPO_URL=https://x-access-token:${{ secrets.SOURCE_REPO_TOKEN }}@github.com/Cambly/facebook-ios-sdk.git
@@ -73,7 +86,7 @@ jobs:
       - name: Patch Package.swift
         env:
           VENDOR: facebook
-          ASSETS_TAG: facebook-${{ inputs.version }}
+          ASSETS_TAG: facebook-${{ inputs.version }}${{ inputs.tag_suffix }}
           FBSDKCoreKit_Basics_SHA: ${{ steps.checksums.outputs.FBSDKCoreKit_Basics_sha }}
           FBSDKCoreKit_SHA:        ${{ steps.checksums.outputs.FBSDKCoreKit_sha }}
           FBSDKLoginKit_SHA:       ${{ steps.checksums.outputs.FBSDKLoginKit_sha }}
@@ -116,7 +129,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="facebook-${{ inputs.version }}"
+          tag="facebook-${{ inputs.version }}${{ inputs.tag_suffix }}"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \

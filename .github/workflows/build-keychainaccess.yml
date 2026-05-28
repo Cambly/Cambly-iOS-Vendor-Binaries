@@ -11,6 +11,11 @@ on:
         required: true
         type: string
         default: v4.2.2
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version (e.g. adding SDK signature). Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -37,7 +42,15 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build KeychainAccess xcframework via Makefile
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign KeychainAccess xcframework via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=keychainaccess VERSION=${{ inputs.version }} \
             UPSTREAM_REPO_URL=https://github.com/kishikawakatsumi/KeychainAccess.git
@@ -57,7 +70,7 @@ jobs:
       - name: Patch Package.swift
         env:
           VENDOR: keychainaccess
-          ASSETS_TAG: keychainaccess-${{ inputs.version }}
+          ASSETS_TAG: keychainaccess-${{ inputs.version }}${{ inputs.tag_suffix }}
           KeychainAccess_SHA: ${{ steps.checksums.outputs.KeychainAccess_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
@@ -83,7 +96,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="keychainaccess-${{ inputs.version }}"
+          tag="keychainaccess-${{ inputs.version }}${{ inputs.tag_suffix }}"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \

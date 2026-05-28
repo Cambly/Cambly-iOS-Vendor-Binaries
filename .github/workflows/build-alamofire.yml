@@ -15,6 +15,11 @@ on:
         required: true
         type: string
         default: 5.10.2
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version (e.g. adding SDK signature). Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -45,7 +50,15 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build Alamofire xcframework via Makefile
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign Alamofire xcframework via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=alamofire VERSION=${{ inputs.version }} \
             UPSTREAM_REPO_URL=https://github.com/Alamofire/Alamofire.git
@@ -65,7 +78,7 @@ jobs:
       - name: Patch Package.swift
         env:
           VENDOR: alamofire
-          ASSETS_TAG: alamofire-${{ inputs.version }}
+          ASSETS_TAG: alamofire-${{ inputs.version }}${{ inputs.tag_suffix }}
           Alamofire_SHA: ${{ steps.checksums.outputs.Alamofire_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
@@ -94,7 +107,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="alamofire-${{ inputs.version }}"
+          tag="alamofire-${{ inputs.version }}${{ inputs.tag_suffix }}"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \

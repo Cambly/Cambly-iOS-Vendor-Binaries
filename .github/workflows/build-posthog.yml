@@ -15,6 +15,11 @@ on:
         required: true
         type: string
         default: 3.58.3
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version (e.g. adding SDK signature). Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -43,7 +48,15 @@ jobs:
           sudo xcode-select -s "$XCODE"
           xcodebuild -version
 
-      - name: Build PostHog xcframework via Makefile
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign PostHog xcframework via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=posthog VERSION=${{ inputs.version }} \
             UPSTREAM_REPO_URL=https://github.com/PostHog/posthog-ios.git
@@ -63,7 +76,7 @@ jobs:
       - name: Patch Package.swift
         env:
           VENDOR: posthog
-          ASSETS_TAG: posthog-${{ inputs.version }}
+          ASSETS_TAG: posthog-${{ inputs.version }}${{ inputs.tag_suffix }}
           PostHog_SHA: ${{ steps.checksums.outputs.PostHog_sha }}
         run: python3 .github/scripts/patch_package_swift.py
 
@@ -89,7 +102,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="posthog-${{ inputs.version }}"
+          tag="posthog-${{ inputs.version }}${{ inputs.tag_suffix }}"
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \
