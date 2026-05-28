@@ -124,6 +124,14 @@ let package = Package(
       name: "RxSwift",
       targets: ["RxSwift"]
     ),
+    // === promisekit ===
+    // Built from mxcl/PromiseKit via its `PromiseKit.xcodeproj` scheme
+    // `PromiseKit`. Migrated from the separate Cambly-PromiseKit-Binary repo
+    // into this monorepo on 2026-05-28.
+    .library(
+      name: "PromiseKit",
+      targets: ["PromiseKit"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -233,6 +241,14 @@ let package = Package(
       name: "RxSwift",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/rxswift-6.9.1-signed/RxSwift.xcframework.zip",
       checksum: "db457946b7addee15d8cacab592544fb33dbe13479d32f805d5f7e60fc373db0"
+    ),
+    // === promisekit ===
+    // Source: mxcl/PromiseKit (public upstream, no fork)
+    // URLs + checksums patched by build-promisekit.yml on each release.
+    .binaryTarget(
+      name: "PromiseKit",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )
