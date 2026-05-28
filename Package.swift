@@ -179,8 +179,8 @@ let package = Package(
     // URLs + checksums patched by build-sdwebimage.yml on each release.
     .binaryTarget(
       name: "SDWebImage",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/sdwebimage-5.21.7/SDWebImage.xcframework.zip",
-      checksum: "d7cf0d35f8c7235ce35e0d4a89c2a83418a02b95b210c66c1806f1698e31dd6c"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/sdwebimage-5.21.7-signed/SDWebImage.xcframework.zip",
+      checksum: "fe9d145bdf9b64079e7eb8f056cbbf0fe0f718bda08a79e300ddd7494a420d6e"
     ),
 
     // === sentry ===
