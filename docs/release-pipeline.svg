@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#1e6fcf"/>
+    </marker>
+  </defs>
+
+  <text x="600" y="30" text-anchor="middle" font-size="20" font-weight="700">How a vendor release is produced</text>
+  <text x="600" y="52" text-anchor="middle" font-size="13" fill="#666">One workflow_dispatch run from "Run workflow" click to "release published"</text>
+
+  <!-- ROW 1: INPUTS -->
+  <g>
+    <rect x="40" y="90" width="320" height="120" rx="8" fill="#fff7e0" stroke="#d4a017" stroke-width="2"/>
+    <text x="200" y="116" text-anchor="middle" font-weight="700" fill="#d4a017">workflow_dispatch inputs</text>
+    <line x1="60" y1="128" x2="340" y2="128" stroke="#d4a017" stroke-dasharray="3 2"/>
+    <text x="60" y="148" font-size="12" fill="#222"><tspan font-weight="600">version</tspan>: upstream tag (e.g. 4.6.0)</text>
+    <text x="60" y="168" font-size="12" fill="#222"><tspan font-weight="600">tag_suffix</tspan>: optional, default ""</text>
+    <text x="60" y="186" font-size="11" fill="#555">  empty for first build of an upstream</text>
+    <text x="60" y="200" font-size="11" fill="#555">  -signed when republishing</text>
+  </g>
+
+  <!-- ROW 1: SECRETS -->
+  <g>
+    <rect x="400" y="90" width="380" height="120" rx="8" fill="#fde2e2" stroke="#c0392b" stroke-width="2"/>
+    <text x="590" y="116" text-anchor="middle" font-weight="700" fill="#c0392b">Repo secrets (env vars on the runner)</text>
+    <line x1="420" y1="128" x2="760" y2="128" stroke="#c0392b" stroke-dasharray="3 2"/>
+    <text x="420" y="148" font-size="11" font-family="ui-monospace, monospace" fill="#222">MATCH_GIT_SSH_PRIVATE_KEY</text>
+    <text x="430" y="162" font-size="10" fill="#555">cambly-machine-user-ios SSH private key</text>
+    <text x="420" y="178" font-size="11" font-family="ui-monospace, monospace" fill="#222">MATCH_PASSWORD</text>
+    <text x="430" y="190" font-size="10" fill="#555">Signing repo .p12 decryption password</text>
+    <text x="420" y="204" font-size="11" font-family="ui-monospace, monospace" fill="#222">SIGNING_IDENTITY</text>
+  </g>
+
+  <!-- ROW 1: SOURCE_REPO_TOKEN note -->
+  <g>
+    <rect x="820" y="90" width="340" height="120" rx="8" fill="#fde2e2" stroke="#c0392b" stroke-width="2" stroke-dasharray="4 3"/>
+    <text x="990" y="116" text-anchor="middle" font-weight="700" fill="#c0392b">SOURCE_REPO_TOKEN (Facebook only)</text>
+    <line x1="840" y1="128" x2="1140" y2="128" stroke="#c0392b" stroke-dasharray="3 2"/>
+    <text x="840" y="148" font-size="11" fill="#444">PAT with read access to the private</text>
+    <text x="840" y="164" font-size="11" fill="#444">Cambly/facebook-ios-sdk fork.</text>
+    <text x="840" y="188" font-size="11" fill="#444">Other vendors clone public upstreams</text>
+    <text x="840" y="204" font-size="11" fill="#444">and don't need this.</text>
+  </g>
+
+  <!-- VERTICAL PIPELINE STEPS -->
+  <!-- Step 1 -->
+  <g>
+    <rect x="60" y="260" width="380" height="60" rx="6" fill="#fff" stroke="#1e6fcf"/>
+    <text x="80" y="282" font-weight="700" fill="#1e6fcf">① Checkout this repo + select Xcode 26.x</text>
+    <text x="80" y="305" font-size="11" fill="#555">actions/checkout@v4 + xcode-select. ~5 sec.</text>
+  </g>
+
+  <!-- Step 2 -->
+  <g>
+    <rect x="60" y="350" width="380" height="100" rx="6" fill="#fff" stroke="#1e6fcf" stroke-width="2.5"/>
+    <text x="80" y="372" font-weight="700" fill="#1e6fcf">② Set up signing (composite action)</text>
+    <text x="80" y="392" font-size="11" fill="#444">.github/actions/setup-signing/action.yml:</text>
+    <text x="92" y="408" font-size="11" fill="#555">a. webfactory/ssh-agent loads bot SSH key</text>
+    <text x="92" y="422" font-size="11" fill="#555">b. gem install fastlane</text>
+    <text x="92" y="436" font-size="11" fill="#555">c. fastlane run setup_circle_ci (temp keychain)</text>
+    <text x="92" y="450" font-size="11" fill="#555">d. fastlane run sync_code_signing (install cert)</text>
+  </g>
+
+  <!-- Step 3 -->
+  <g>
+    <rect x="60" y="480" width="380" height="180" rx="6" fill="#fff" stroke="#1e6fcf"/>
+    <text x="80" y="502" font-weight="700" fill="#1e6fcf">③ make all VENDOR=… VERSION=… (sequential)</text>
+    <line x1="80" y1="510" x2="430" y2="510" stroke="#1e6fcf" stroke-dasharray="2 2"/>
+    <text x="80" y="528" font-size="11" font-weight="600" fill="#444">clone</text>
+    <text x="92" y="542" font-size="11" fill="#555">git clone upstream@$VERSION</text>
+    <text x="80" y="560" font-size="11" font-weight="600" fill="#444">build-xcframeworks</text>
+    <text x="92" y="574" font-size="11" fill="#555">xcodebuild archive iOS device + simulator</text>
+    <text x="92" y="588" font-size="11" fill="#555">→ -create-xcframework + sanitize</text>
+    <text x="80" y="606" font-size="11" font-weight="600" fill="#444">sign-xcframeworks</text>
+    <text x="92" y="620" font-size="11" fill="#555">codesign --timestamp --sign $SIGNING_IDENTITY</text>
+    <text x="80" y="638" font-size="11" font-weight="600" fill="#444">zip + checksums</text>
+    <text x="92" y="652" font-size="11" fill="#555">zip xcframework + swift package compute-checksum</text>
+  </g>
+
+  <!-- Step 4 -->
+  <g>
+    <rect x="640" y="260" width="500" height="80" rx="6" fill="#fff" stroke="#1e6fcf"/>
+    <text x="660" y="282" font-weight="700" fill="#1e6fcf">④ Patch Package.swift (binaryTarget url + sha)</text>
+    <text x="660" y="302" font-size="11" fill="#444">python3 .github/scripts/patch_package_swift.py</text>
+    <text x="660" y="320" font-size="11" fill="#555">Edits the // === &lt;vendor&gt; === section to point at new release.</text>
+  </g>
+
+  <!-- Step 5 -->
+  <g>
+    <rect x="640" y="360" width="500" height="80" rx="6" fill="#fff" stroke="#1e6fcf"/>
+    <text x="660" y="382" font-weight="700" fill="#1e6fcf">⑤ Commit Package.swift to main + push</text>
+    <text x="660" y="402" font-size="11" fill="#444">git commit + rebase loop (max 3 attempts).</text>
+    <text x="660" y="420" font-size="11" fill="#555">Order: commit FIRST, then create release tag — so the tag points at</text>
+    <text x="660" y="434" font-size="11" fill="#555">the commit holding the patched url/sha.</text>
+  </g>
+
+  <!-- Step 6 -->
+  <g>
+    <rect x="640" y="460" width="500" height="100" rx="6" fill="#fff" stroke="#0d8a4a" stroke-width="2.5"/>
+    <text x="660" y="482" font-weight="700" fill="#0d8a4a">⑥ gh release create &lt;vendor&gt;-&lt;version&gt;&lt;suffix&gt;</text>
+    <text x="660" y="502" font-size="11" fill="#444">Uploads *.xcframework.zip as Release Assets.</text>
+    <text x="660" y="522" font-size="11" fill="#555">tag = inputs.version + inputs.tag_suffix</text>
+    <text x="660" y="540" font-size="11" fill="#555">First-time release of an upstream tag → bare `&lt;vendor&gt;-&lt;version&gt;`</text>
+    <text x="660" y="554" font-size="11" fill="#555">Republish (e.g. add signature) → `&lt;vendor&gt;-&lt;version&gt;-signed`</text>
+  </g>
+
+  <!-- Step 7 -->
+  <g>
+    <rect x="640" y="580" width="500" height="80" rx="6" fill="#fff" stroke="#c0392b"/>
+    <text x="660" y="602" font-weight="700" fill="#c0392b">⑦ Runner destroyed</text>
+    <text x="660" y="622" font-size="11" fill="#444">VM shut down. Keychain, ssh-agent, /tmp all gone.</text>
+    <text x="660" y="640" font-size="11" fill="#555">Bot SSH key + match password leave no trace on disk.</text>
+  </g>
+
+  <!-- ARROWS between steps -->
+  <line x1="250" y1="320" x2="250" y2="345" stroke="#1e6fcf" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="250" y1="450" x2="250" y2="475" stroke="#1e6fcf" stroke-width="2" marker-end="url(#arr)"/>
+  <path d="M 440 580 Q 540 580 540 300 L 635 300" stroke="#1e6fcf" stroke-width="2" fill="none" marker-end="url(#arr)"/>
+  <line x1="890" y1="340" x2="890" y2="355" stroke="#1e6fcf" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="890" y1="440" x2="890" y2="455" stroke="#1e6fcf" stroke-width="2" marker-end="url(#arr)"/>
+  <line x1="890" y1="560" x2="890" y2="575" stroke="#1e6fcf" stroke-width="2" marker-end="url(#arr)"/>
+
+  <!-- Footer note -->
+  <rect x="40" y="685" width="1120" height="25" rx="4" fill="#f5f5f5" stroke="none"/>
+  <text x="600" y="702" text-anchor="middle" font-size="11" fill="#666" font-style="italic">Total runtime per vendor: ~5–15 min (one xcframework) / ~15–25 min (Facebook's 3 frameworks). Runs serialize via concurrency: package-update.</text>
+</svg>

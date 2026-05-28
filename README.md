@@ -1,6 +1,18 @@
 # Cambly-iOS-Vendor-Binaries
 
-Prebuilt `.xcframework` distribution of vendored iOS SDKs for Cambly's iOS apps. Wraps upstream sources (or Cambly forks where applicable) so Cambly-Swift skips recompilation of these vendors on every clean build. See [MOB-222](https://cambly.atlassian.net/browse/MOB-222) for context.
+Prebuilt, code-signed `.xcframework` distribution of vendored iOS SDKs for Cambly's iOS apps (Adults, Kids, Lexicon). Wraps upstream sources (or Cambly forks where applicable) so Cambly-Swift skips recompilation of these vendors on every clean build, and ships them with the team's Apple Distribution signature so Apple's SDK Signature requirement (ITMS-91065) is satisfied.
+
+See [MOB-222](https://cambly.atlassian.net/browse/MOB-222) for the initial migration context and [MOB-288](https://cambly.atlassian.net/browse/MOB-288) for the SDK Signature follow-up.
+
+## Why this repo exists
+
+Two problems with shipping these third-party SDKs as **source-form SwiftPM dependencies** in Cambly-Swift directly:
+
+1. **Build time.** Facebook SDK / Lottie / Sentry / Realm etc. add up to >30s of clean-build recompilation each, on every CI run and every developer's `Cambly.xcworkspace` clean. Across hundreds of clean builds per day this is a large compounding cost. As prebuilt xcframeworks, SwiftPM resolves them as fixed binary artifacts (cached locally after the first download) and the toolchain skips compilation entirely.
+
+2. **App Store SDK Signature requirement.** Apple [requires xcframeworks of a specific list of "commonly used third-party SDKs"](https://developer.apple.com/support/third-party-SDK-requirements/) (Facebook, Lottie, RealmSwift, SDWebImage, Starscream — and a growing list) to carry a top-level Apple Distribution signature, or App Store Connect rejects the upload with `ITMS-91065: Missing signature`. We were grandfathered for a while; Lexicon v1.2.6 (May 2026) was the first to be rejected, triggering this repo's signing pipeline.
+
+This repo's purpose: have one place that owns the build-and-sign of every vendored SDK, exposes them via `binaryTarget` URLs in a shared `Package.swift`, and Cambly-Swift consumes that single SwiftPM package.
 
 Versions tracked:
 
@@ -23,15 +35,27 @@ More vendors may be added — see "Adding a new vendor" below. Google auth stack
 
 ## How it works
 
+![Architecture overview](docs/architecture.svg)
+
 A single `Package.swift` declares one `.library` product per vendor, each backed by one or more `.binaryTarget`s pointing at GitHub Release assets of this repo. Cambly-Swift adds this repo once in `swift_packages.yml` and references the relevant products in its target dependency lists — same usage shape as any source-form SwiftPM package.
 
 Vendor sections inside `Package.swift` (both in `products:` and `targets:`) are delimited by `// === <vendor-key> ===` marker comments. The marker convention is load-bearing: `.github/scripts/patch_package_swift.py` uses it to locate the section to rewrite on each release.
 
+## How a vendor release is produced
+
+The build + sign + publish pipeline runs as one GitHub Actions workflow per vendor. Manual trigger (workflow_dispatch) only — vendor upgrades are infrequent, so there's no schedule or auto-trigger.
+
+![Release pipeline](docs/release-pipeline.svg)
+
+Step ② (`Set up signing`) is the shared composite action at `.github/actions/setup-signing/action.yml` — every `build-*.yml` calls it. It owns ssh-agent + fastlane install + setup_circle_ci + sync_code_signing. The Makefile's `sign-xcframeworks` target then invokes `codesign --sign $SIGNING_IDENTITY` against the cert that match installed.
+
 ## Operational gotchas
 
-Two things that have bitten this repo's release flow. Read before bumping or rebuilding any vendor.
+Things that have bitten this repo's release flow. Read before bumping or rebuilding any vendor.
 
-### The Makefile strips dev-time files from every `.framework`
+### Build pipeline
+
+#### The Makefile strips dev-time files from every `.framework`
 
 Framework bundles built via `xcodebuild archive` honor whatever the upstream xcodeproj declares in its **Copy Bundle Resources** phase. Some upstream projects accidentally land dev-time scripts/sources there — e.g. PostHog 3.58.3 ships `generate-pb-c.sh`, a PLCrashReporter `protoc-c` codegen helper. Source-form SwiftPM excludes such files via `Package.swift`'s `exclude:`, but our pipeline doesn't honor that — it obeys the xcodeproj.
 
@@ -39,7 +63,7 @@ If such a file reaches the consuming app's `Frameworks/` dir, **App Store Connec
 
 The Makefile's `build-xcframeworks` target therefore strips a broad list of dev-time file types (`*.sh / *.py / *.swift / *.c / Makefile / ...`) from each `.framework` slice before `-create-xcframework`. Canonical framework contents (`Mach-O / Info.plist / Headers/ / Modules/ / PrivateHeaders/ / Resources/ / PrivacyInfo.xcprivacy`) are not matched. If you add a new vendor and discover the sanitize step removes something it shouldn't, narrow the pattern — don't disable the step.
 
-### Don't reuse a release tag once consumers have pulled it
+#### Don't reuse a release tag once consumers have pulled it
 
 Consumers cache `binaryTarget` downloads in `~/Library/Caches/org.swift.swiftpm/artifacts/`, **keyed by URL**. If you delete-and-recreate a release tag with different zip contents (the per-vendor workflows do `gh release delete --cleanup-tag && gh release create`), every consumer with a populated cache will fall into one of two bad states:
 
@@ -50,7 +74,57 @@ Recovery requires every developer (and CI cache layer) to manually `rm -rf` the 
 
 **Rule**: the first release of a given upstream version uses `<vendor>-<version>` as the tag. Any rebuild at the same upstream version (e.g. fixing a packaging bug, not a code change) must go out under a fresh tag — `<vendor>-<version>-<suffix>` is fine (`posthog-3.58.3-codesign-fix`, `lottie-4.6.0-r2`). A new tag means a new URL, which means a fresh cache key, which means every consumer auto-redownloads cleanly with zero local intervention.
 
-The per-vendor workflows currently take `version` as input and reuse the tag — that's correct for the **first** build of a given upstream version. For a rebuild, either tweak the workflow (one-off) to take a separate tag suffix, or do it by hand: trigger the workflow to regenerate the zip (it'll overwrite the original `<vendor>-<version>` release; that's OK since you're abandoning it), then manually `gh release create <vendor>-<version>-<suffix> --target main <built-zip>` and patch `Package.swift` to point the binaryTarget url at the new tag.
+Every `build-*.yml` workflow exposes an optional **`tag_suffix`** workflow_dispatch input for exactly this purpose. Default empty (first release of an upstream version). Pass `-signed`, `-r2`, etc. when republishing.
+
+### Signing pipeline (SDK Signature / ITMS-91065)
+
+The xcframeworks shipped from this repo are codesigned with the team's Apple Distribution identity (`Apple Distribution: Cambly Inc. (ZNP9AYBP23)`). Required for SDKs on Apple's [commonly used third-party SDK list](https://developer.apple.com/support/third-party-SDK-requirements/) (Facebook / Lottie / Realm / SDWebImage / Starscream) since 2024; missed by Lexicon 1.2.6 in May 2026 → ITMS-91065 rejection → led to this whole pipeline.
+
+The signing setup is encapsulated in `.github/actions/setup-signing/` (composite action). Each `build-*.yml` calls it once; the Makefile's `sign-xcframeworks` target then runs codesign against `${SIGNING_IDENTITY}`. The non-obvious bits learned the hard way:
+
+#### `fastlane run setup_ci` ≠ `fastlane run setup_circle_ci` on GHA
+
+`setup_ci` calls `detect_provider` which only recognizes CircleCI and CodeBuild environments — on GHA's macos-15 runner it silently does **nothing**. `setup_circle_ci` skips the detection and unconditionally runs the keychain setup, so it **does work on GHA** despite the name. Use `setup_circle_ci` here, not `setup_ci`. (See run 26504963206 attempt 2 for the time we got bitten.)
+
+#### GHA per-step shell isolation requires `$GITHUB_ENV` for fastlane setup_circle_ci to compose with later steps
+
+`setup_circle_ci` exports `MATCH_KEYCHAIN_NAME` and `MATCH_KEYCHAIN_PASSWORD` to the **fastlane Ruby process** env, then dies. GHA runs each step in its own shell, so the env vars don't survive into the next step where `fastlane run sync_code_signing` would read them. Persist them via `$GITHUB_ENV` in the same step:
+
+```bash
+fastlane run setup_circle_ci
+echo "MATCH_KEYCHAIN_NAME=fastlane_tmp_keychain" >> "$GITHUB_ENV"
+echo "MATCH_KEYCHAIN_PASSWORD=" >> "$GITHUB_ENV"
+```
+
+This is already handled inside the `setup-signing` composite action — flagged here because if you ever inline these steps again (e.g. in a debug workflow), you have to remember the `$GITHUB_ENV` lines or match will install the cert into the wrong keychain. (CircleCI doesn't need this since a whole fastlane lane runs in a single Ruby process; the env stays alive for the whole `before_all` + lane body.)
+
+#### `codesign` hangs forever on a misconfigured keychain (UI prompt)
+
+If the imported cert's partition list isn't configured, `codesign` triggers a keychain-access UI permission popup. GHA runners are headless — nothing answers the popup, and codesign hangs until the job hits the 6-hour timeout. Symptom: a "Build + sign …" step that normally takes 3 min sits at 7+ min with no obvious failure.
+
+`fastlane sync_code_signing` configures the partition list automatically **only if it knows the destination keychain's password**. Two ways to satisfy that:
+
+1. Recommended (what `setup-signing` does): `setup_circle_ci` creates `fastlane_tmp_keychain` with empty password, and we tell match to install there via the env vars above. match's partition-list call then succeeds.
+2. Alternative: pass `keychain_name:login.keychain-db keychain_password:<the runner's actual login.keychain password>` to match. The runner's login.keychain password on macos-15 is **not** an empty string (verified: `security set-key-partition-list -k ""` returns `SecKeychainItemSetAccessWithPassword: The user name or passphrase you entered is not correct`). It's also not documented anywhere stable. Avoid this path.
+
+If `codesign` ever hangs again, this is the first thing to check — verify `security find-identity -v -p codesigning` shows the cert and `security set-key-partition-list -S apple-tool:,apple: -s -k <pwd> <keychain>` exits 0.
+
+### GitHub Actions specifics
+
+#### `concurrency: { cancel-in-progress: false }` still cancels pending runs
+
+Each `build-*.yml` uses `concurrency: { group: package-update, cancel-in-progress: false }` to serialize the `git push origin main` step. We expected this to queue concurrent runs and run them in order. **It doesn't.** Per [GHA docs](https://docs.github.com/en/actions/using-jobs/using-concurrency): "Any previously pending job or workflow in the concurrency group will be cancelled."
+
+Effect: triggering N workflows in the same group within a few seconds leaves you with the first run in_progress + the **last** run pending. The N–2 runs in the middle all get cancelled.
+
+**Don't loop over `gh workflow run` to mass-trigger.** Either:
+- Trigger one, wait for it (`gh run watch`) to finish, then trigger the next. There's a sequential trigger script template at `/tmp/sequential-trigger.sh` (locally on huihuang's machine; recreate from this README if needed).
+- Or run a single matrix job inside one workflow file (not done yet).
+
+#### Some Markdown / log notes
+
+- `gh run view --log` returns empty on in-progress runs. To inspect logs while a run is mid-flight, either wait for it to finish, or use the GHA UI (live tail). Cancelling the run unblocks `--log`.
+
 
 ## Upgrading an existing vendor
 
