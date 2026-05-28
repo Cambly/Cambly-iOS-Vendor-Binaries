@@ -64,34 +64,31 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane --no-document
 
-      # `fastlane run setup_ci` creates a temporary keychain, sets it as the
-      # runner's default, and unlocks it. The crucial side-effect is that
-      # certs imported by `sync_code_signing` afterwards get their partition
-      # list configured automatically so codesign won't pop the UI permission
-      # prompt that hangs a headless GHA runner indefinitely.
-      #
-      # Cambly-Swift's Fastfile does the equivalent via `before_all do; setup_circle_ci`.
-      # This repo's workflows invoke fastlane via `fastlane run <action>` (no
-      # lane / no before_all hook), so setup_ci has to be called explicitly.
-      - name: Set up CI keychain
-        run: fastlane run setup_ci
-
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
         # skip_provisioning_profiles:true — xcframework signing only needs the
-        # Apple Distribution certificate (installed into keychain by this step);
-        # provisioning profiles are for .ipa signing and are not required here.
-        # Without this flag, match errors out at the profile-lookup phase if the
-        # Signing repo doesn't have a profile matching the given app_identifier,
-        # even though the certificate install succeeded.
+        # Apple Distribution certificate; provisioning profiles are for .ipa
+        # signing and are not required here.
+        #
+        # keychain_name:login.keychain-db + keychain_password:"" — install the
+        # cert into the runner's default login.keychain (where codesign looks
+        # for certs) and tell match the keychain password so it can run
+        # `security set-key-partition-list` to configure the imported cert's
+        # partition list. Without setting partition list, codesign hangs on a
+        # headless GHA runner waiting for a UI permission popup that no one
+        # can answer. (Previous attempt with `fastlane run setup_ci` created
+        # a fastlane_tmp_keychain — codesign couldn't find the cert there
+        # because the search list still pointed at login.keychain-db only.)
         run: |
           fastlane run sync_code_signing \
             type:appstore \
             readonly:true \
             skip_provisioning_profiles:true \
             git_url:"git@github.com:Cambly/Cambly-Swift-Signing.git" \
-            app_identifier:com.cambly.Cambly
+            app_identifier:com.cambly.Cambly \
+            keychain_name:login.keychain-db \
+            keychain_password:""
           echo "--- codesign identities available after match:"
           security find-identity -v -p codesigning
 
