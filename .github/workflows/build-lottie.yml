@@ -64,58 +64,42 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane --no-document
 
-      # Create a dedicated build keychain whose password we control. The
-      # runner's login.keychain has an unknown password (verified: set-key-
-      # partition-list with empty pwd fails with "user name or passphrase
-      # not correct" — see run 26548887250 log), so we can't manipulate it.
-      # Solution: own keychain, own password, added to the search list so
-      # codesign finds the cert here.
-      - name: Create build keychain
-        env:
-          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
+      # Use fastlane's setup_circle_ci action to create the build keychain.
+      # Same action Cambly-Swift's Fastfile uses in `before_all`. It creates
+      # `fastlane_tmp_keychain` (empty password), sets it as default, and
+      # writes MATCH_KEYCHAIN_NAME / MATCH_KEYCHAIN_PASSWORD env vars so
+      # the subsequent `match` call routes the cert install there.
+      #
+      # GHA caveat: each step is its own shell process, so the env vars
+      # set by setup_circle_ci die with this step. We propagate them via
+      # $GITHUB_ENV so the next steps see them.
+      #
+      # Note: setup_circle_ci doesn't do any provider detection — it
+      # unconditionally runs the keychain setup. The name "circle_ci" is
+      # historical (fastlane added it for CircleCI first); it works the
+      # same on any CI provider including GHA.
+      - name: setup_circle_ci (create fastlane_tmp_keychain)
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
-          security create-keychain -p "$BUILD_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          # Prepend our keychain to the user's search list so codesign finds
-          # the cert here without needing --keychain.
-          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
-          security unlock-keychain -p "$BUILD_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          # No auto-lock during build (default is 5 min idle).
-          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
-          echo "=== keychain state after create:"
-          security list-keychains -d user
-          security default-keychain
+          fastlane run setup_circle_ci
+          echo "MATCH_KEYCHAIN_NAME=fastlane_tmp_keychain" >> "$GITHUB_ENV"
+          echo "MATCH_KEYCHAIN_PASSWORD=" >> "$GITHUB_ENV"
 
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
+        # MATCH_KEYCHAIN_NAME / MATCH_KEYCHAIN_PASSWORD env vars are set by
+        # the previous step via $GITHUB_ENV — fastlane match reads them
+        # automatically, so we don't need to pass keychain_name /
+        # keychain_password explicitly here.
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
           fastlane run sync_code_signing \
             type:appstore \
             readonly:true \
             skip_provisioning_profiles:true \
             git_url:"git@github.com:Cambly/Cambly-Swift-Signing.git" \
-            app_identifier:com.cambly.Cambly \
-            keychain_name:"$KEYCHAIN_PATH" \
-            keychain_password:"$BUILD_KEYCHAIN_PASSWORD"
-
-      - name: Verify cert + partition list configured
-        env:
-          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
-        run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
-          echo "=== identities visible to codesign:"
+            app_identifier:com.cambly.Cambly
+          echo "=== identities visible to codesign after match:"
           security find-identity -v -p codesigning
-          echo ""
-          echo "=== Force-set partition list (idempotent if match's own attempt worked):"
-          security set-key-partition-list \
-            -S apple-tool:,apple: -s -k "$BUILD_KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH" \
-            && echo "✓ partition list set" \
-            || echo "✗ partition list set FAILED with exit $?"
 
       - name: Build + sign Lottie xcframework via Makefile
         env:
