@@ -64,53 +64,56 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane --no-document
 
-      # Unlock the runner's login.keychain explicitly before match runs.
-      # macos-15 runner ships login.keychain with empty password and unlocked
-      # at boot, but sync_code_signing's set-key-partition-list call still
-      # fails with "item could not be found" — most likely because the
-      # keychain auto-relocks between sessions. Force-unlocking once here
-      # makes subsequent security operations deterministic.
-      - name: Unlock login.keychain
+      # Create a dedicated build keychain whose password we control. The
+      # runner's login.keychain has an unknown password (verified: set-key-
+      # partition-list with empty pwd fails with "user name or passphrase
+      # not correct" — see run 26548887250 log), so we can't manipulate it.
+      # Solution: own keychain, own password, added to the search list so
+      # codesign finds the cert here.
+      - name: Create build keychain
+        env:
+          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
         run: |
-          security unlock-keychain -p "" "$HOME/Library/Keychains/login.keychain-db"
+          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
+          security create-keychain -p "$BUILD_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          # Prepend our keychain to the user's search list so codesign finds
+          # the cert here without needing --keychain.
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          security unlock-keychain -p "$BUILD_KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # No auto-lock during build (default is 5 min idle).
+          security set-keychain-settings -t 3600 -u "$KEYCHAIN_PATH"
+          echo "=== keychain state after create:"
           security list-keychains -d user
           security default-keychain
 
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
         run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
           fastlane run sync_code_signing \
             type:appstore \
             readonly:true \
             skip_provisioning_profiles:true \
             git_url:"git@github.com:Cambly/Cambly-Swift-Signing.git" \
             app_identifier:com.cambly.Cambly \
-            keychain_name:login.keychain-db \
-            keychain_password:""
+            keychain_name:"$KEYCHAIN_PATH" \
+            keychain_password:"$BUILD_KEYCHAIN_PASSWORD"
 
-      # Diagnostic: inspect what match actually deposited into login.keychain.
-      # If `find-identity` shows the cert, we're set. If only `find-certificate`
-      # shows the cert but `find-identity` doesn't, the private key didn't
-      # import properly. Then force set-key-partition-list manually (match's
-      # own call inside sync_code_signing reportedly fails).
-      - name: Verify cert installed + force-configure partition list
+      - name: Verify cert + partition list configured
+        env:
+          BUILD_KEYCHAIN_PASSWORD: ci-temp-${{ github.run_id }}
         run: |
-          echo "=== Certs matching 'Apple Distribution' in login.keychain:"
-          security find-certificate -a -c "Apple Distribution" \
-            "$HOME/Library/Keychains/login.keychain-db" \
-            | grep -E "labl|alis|subj" || echo "(no Apple Distribution cert found in login.keychain)"
+          KEYCHAIN_PATH="$RUNNER_TEMP/cambly-signing.keychain-db"
+          echo "=== identities visible to codesign:"
+          security find-identity -v -p codesigning
           echo ""
-          echo "=== codesign-capable identities (login.keychain only):"
-          security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db" || true
-          echo ""
-          echo "=== codesign-capable identities (all keychains in search list):"
-          security find-identity -v -p codesigning || true
-          echo ""
-          echo "=== Force-set partition list on login.keychain (allow apple-tool / apple use without UI prompt):"
+          echo "=== Force-set partition list (idempotent if match's own attempt worked):"
           security set-key-partition-list \
-            -S apple-tool:,apple: -s -k "" \
-            "$HOME/Library/Keychains/login.keychain-db" \
+            -S apple-tool:,apple: -s -k "$BUILD_KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" \
             && echo "✓ partition list set" \
             || echo "✗ partition list set FAILED with exit $?"
 
