@@ -231,8 +231,8 @@ let package = Package(
     // URLs + checksums patched by build-rxswift.yml on each release.
     .binaryTarget(
       name: "RxSwift",
-      url: "PENDING",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/rxswift-6.9.1-signed/RxSwift.xcframework.zip",
+      checksum: "db457946b7addee15d8cacab592544fb33dbe13479d32f805d5f7e60fc373db0"
     ),
   ]
 )
