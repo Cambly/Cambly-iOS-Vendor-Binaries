@@ -116,6 +116,14 @@ let package = Package(
       name: "Starscream",
       targets: ["Starscream"]
     ),
+    // === rxswift ===
+    // Built from ReactiveX/RxSwift via its `Rx.xcodeproj` scheme `RxSwift`.
+    // Migrated from the separate Cambly-RxSwift-Binary repo into this
+    // monorepo on 2026-05-28 (consolidating per-vendor binary repos).
+    .library(
+      name: "RxSwift",
+      targets: ["RxSwift"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -217,6 +225,14 @@ let package = Package(
       name: "Starscream",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/starscream-4.0.8-signed/Starscream.xcframework.zip",
       checksum: "1a518aae307811a0ca973afb163c84c99e5646e78185bd8649d1be56c54e9042"
+    ),
+    // === rxswift ===
+    // Source: ReactiveX/RxSwift (public upstream, no fork)
+    // URLs + checksums patched by build-rxswift.yml on each release.
+    .binaryTarget(
+      name: "RxSwift",
+      url: "PENDING",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

@@ -120,6 +120,13 @@ ifeq ($(VENDOR),starscream)
     "Starscream:Starscream"
 endif
 
+ifeq ($(VENDOR),rxswift)
+  UPSTREAM_REPO_URL ?= git@github.com:ReactiveX/RxSwift.git
+  BUILD_PROJECT_FLAG := -project Rx.xcodeproj
+  SCHEME_PRODUCT_PAIRS := \
+    "RxSwift:RxSwift"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
 .PHONY: all clean clone build-xcframeworks sign-xcframeworks zip checksums require-args
@@ -134,7 +141,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 
