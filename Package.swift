@@ -123,18 +123,18 @@ let package = Package(
     // URLs + checksums patched by build-facebook.yml workflow on each release.
     .binaryTarget(
       name: "FBSDKLoginKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKLoginKit.xcframework.zip",
-      checksum: "d3aeffd6b1ff2317351691ce5a1edf8da8f98471f2517d0778157f93d01b5bd2"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly-signed/FBSDKLoginKit.xcframework.zip",
+      checksum: "6db9e8d284e3ee2e0b08b03f9cc2874759197f2bdb86bd6a5e8520b5d9b2a6c3"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit.xcframework.zip",
-      checksum: "1ad86bedfdbf8ee0052a9bf8f691876e469db5e5de6d5e23052bd64723757c2c"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly-signed/FBSDKCoreKit.xcframework.zip",
+      checksum: "ccc268aecd66001c09b70c11b8745268299d3e0102ba86ef0e7bf8ce91bb7970"
     ),
     .binaryTarget(
       name: "FBSDKCoreKit_Basics",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly/FBSDKCoreKit_Basics.xcframework.zip",
-      checksum: "cdb427ed40c5466e36152808c6ab2e92cd3a7dfb9f150bef7d132cbfdf6c4682"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/facebook-v11.0.1-cambly-signed/FBSDKCoreKit_Basics.xcframework.zip",
+      checksum: "23a9a022f356d59ab48cfc4bc08d04389a5e97e17d3ec83f08181537bf53a74d"
     ),
 
     // === alamofire ===
