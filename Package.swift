@@ -215,8 +215,8 @@ let package = Package(
     // URLs + checksums patched by build-starscream.yml on each release.
     .binaryTarget(
       name: "Starscream",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/starscream-4.0.8/Starscream.xcframework.zip",
-      checksum: "a9437454c9c82b0c7a1fca2383a496b1bb09bf54f2ba8ad8b944d3aab0df41ff"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/starscream-4.0.8-signed/Starscream.xcframework.zip",
+      checksum: "1a518aae307811a0ca973afb163c84c99e5646e78185bd8649d1be56c54e9042"
     ),
   ]
 )
