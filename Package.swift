@@ -247,8 +247,8 @@ let package = Package(
     // URLs + checksums patched by build-promisekit.yml on each release.
     .binaryTarget(
       name: "PromiseKit",
-      url: "PENDING",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/promisekit-6.22.1-signed/PromiseKit.xcframework.zip",
+      checksum: "af631ad5f9551410cff3fa3b854acd163d4a54bd506bccc2ebb3e55168a423a6"
     ),
   ]
 )
