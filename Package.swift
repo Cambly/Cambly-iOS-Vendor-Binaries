@@ -153,7 +153,7 @@ let package = Package(
     .binaryTarget(
       name: "Lottie",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/lottie-4.6.0-signed/Lottie.xcframework.zip",
-      checksum: "400f8d8731afb3164922f035371d27e424e1d590e76fe14cc7ce8b85121112df"
+      checksum: "3830c5702dd6eb118259ff318e55bbd0bd67b42e20b39b6ba6d23de978e97db4"
     ),
 
     // === keychainaccess ===
