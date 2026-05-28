@@ -188,8 +188,8 @@ let package = Package(
     // URLs + checksums patched by build-sentry.yml on each release.
     .binaryTarget(
       name: "Sentry",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/sentry-9.13.0/Sentry.xcframework.zip",
-      checksum: "34a7637a49856e4c11ce0b3b366d3b9e54c88f7a5ed2586c9d878f76c7dcedef"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/sentry-9.13.0-signed/Sentry.xcframework.zip",
+      checksum: "5a4eef1dd4b93b4503582421d0b10560de886c09d8308e8b02180f64abd361dd"
     ),
 
     // === posthog ===
