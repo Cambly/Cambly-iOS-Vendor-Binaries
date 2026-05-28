@@ -64,6 +64,18 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane --no-document
 
+      # `fastlane run setup_ci` creates a temporary keychain, sets it as the
+      # runner's default, and unlocks it. The crucial side-effect is that
+      # certs imported by `sync_code_signing` afterwards get their partition
+      # list configured automatically so codesign won't pop the UI permission
+      # prompt that hangs a headless GHA runner indefinitely.
+      #
+      # Cambly-Swift's Fastfile does the equivalent via `before_all do; setup_circle_ci`.
+      # This repo's workflows invoke fastlane via `fastlane run <action>` (no
+      # lane / no before_all hook), so setup_ci has to be called explicitly.
+      - name: Set up CI keychain
+        run: fastlane run setup_ci
+
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
