@@ -236,10 +236,18 @@ build-xcframeworks: clone
 # --force allows re-running over an already-signed bundle (workflow re-runs).
 sign-xcframeworks: build-xcframeworks
 	@test -n "$(SIGNING_IDENTITY)" || { echo "❌ SIGNING_IDENTITY required (env or make var)"; exit 1; }
+	@# Diagnostic — print what identities codesign can see at sign time, and
+	@# the keychain search list / default. If sign fails downstream this is
+	@# the first place to look.
+	@echo "=== [sign-xcframeworks] keychain state at sign time ==="
+	@echo "--- default keychain:"; security default-keychain || true
+	@echo "--- search list:"; security list-keychains -d user || true
+	@echo "--- codesign identities (all keychains):"; security find-identity -v -p codesigning || true
 	@for product in $(PRODUCTS_LIST); do \
 	  echo "🔏 Signing $$product.xcframework with: $(SIGNING_IDENTITY)"; \
-	  codesign --force --timestamp -v --sign "$(SIGNING_IDENTITY)" \
-	    $(ARTIFACTS_DIR)/$$product.xcframework; \
+	  codesign --force --timestamp -vvvv --sign "$(SIGNING_IDENTITY)" \
+	    $(ARTIFACTS_DIR)/$$product.xcframework \
+	    || { echo "✗ codesign FAILED with exit $$?"; exit 1; }; \
 	done
 
 zip: sign-xcframeworks

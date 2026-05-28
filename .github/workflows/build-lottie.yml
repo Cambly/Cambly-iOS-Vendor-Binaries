@@ -64,22 +64,21 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane --no-document
 
+      # Unlock the runner's login.keychain explicitly before match runs.
+      # macos-15 runner ships login.keychain with empty password and unlocked
+      # at boot, but sync_code_signing's set-key-partition-list call still
+      # fails with "item could not be found" — most likely because the
+      # keychain auto-relocks between sessions. Force-unlocking once here
+      # makes subsequent security operations deterministic.
+      - name: Unlock login.keychain
+        run: |
+          security unlock-keychain -p "" "$HOME/Library/Keychains/login.keychain-db"
+          security list-keychains -d user
+          security default-keychain
+
       - name: Sync Apple Distribution cert from Cambly-Swift-Signing
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-        # skip_provisioning_profiles:true — xcframework signing only needs the
-        # Apple Distribution certificate; provisioning profiles are for .ipa
-        # signing and are not required here.
-        #
-        # keychain_name:login.keychain-db + keychain_password:"" — install the
-        # cert into the runner's default login.keychain (where codesign looks
-        # for certs) and tell match the keychain password so it can run
-        # `security set-key-partition-list` to configure the imported cert's
-        # partition list. Without setting partition list, codesign hangs on a
-        # headless GHA runner waiting for a UI permission popup that no one
-        # can answer. (Previous attempt with `fastlane run setup_ci` created
-        # a fastlane_tmp_keychain — codesign couldn't find the cert there
-        # because the search list still pointed at login.keychain-db only.)
         run: |
           fastlane run sync_code_signing \
             type:appstore \
@@ -89,8 +88,31 @@ jobs:
             app_identifier:com.cambly.Cambly \
             keychain_name:login.keychain-db \
             keychain_password:""
-          echo "--- codesign identities available after match:"
-          security find-identity -v -p codesigning
+
+      # Diagnostic: inspect what match actually deposited into login.keychain.
+      # If `find-identity` shows the cert, we're set. If only `find-certificate`
+      # shows the cert but `find-identity` doesn't, the private key didn't
+      # import properly. Then force set-key-partition-list manually (match's
+      # own call inside sync_code_signing reportedly fails).
+      - name: Verify cert installed + force-configure partition list
+        run: |
+          echo "=== Certs matching 'Apple Distribution' in login.keychain:"
+          security find-certificate -a -c "Apple Distribution" \
+            "$HOME/Library/Keychains/login.keychain-db" \
+            | grep -E "labl|alis|subj" || echo "(no Apple Distribution cert found in login.keychain)"
+          echo ""
+          echo "=== codesign-capable identities (login.keychain only):"
+          security find-identity -v -p codesigning "$HOME/Library/Keychains/login.keychain-db" || true
+          echo ""
+          echo "=== codesign-capable identities (all keychains in search list):"
+          security find-identity -v -p codesigning || true
+          echo ""
+          echo "=== Force-set partition list on login.keychain (allow apple-tool / apple use without UI prompt):"
+          security set-key-partition-list \
+            -S apple-tool:,apple: -s -k "" \
+            "$HOME/Library/Keychains/login.keychain-db" \
+            && echo "✓ partition list set" \
+            || echo "✗ partition list set FAILED with exit $?"
 
       - name: Build + sign Lottie xcframework via Makefile
         env:
