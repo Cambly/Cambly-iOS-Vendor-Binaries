@@ -279,23 +279,23 @@ let package = Package(
     // release. Placeholder state until the first workflow run patches them.
     .binaryTarget(
       name: "Fastboard",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/Fastboard.xcframework.zip",
+      checksum: "b529c748e69a505eec57ed1bfc2c3b4effe3ff14e9f36bdd5e5cb951119fa36c"
     ),
     .binaryTarget(
       name: "Whiteboard",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/Whiteboard.xcframework.zip",
+      checksum: "3fe314413330163c8e32659b6878b14e1fc9ce3b9c7ee466ef806d2af14f7da8"
     ),
     .binaryTarget(
       name: "NTLBridge",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/NTLBridge.xcframework.zip",
+      checksum: "2e0e22b1047283ae14b597e97c85d0cf1b31667a0647d60aa9f9f69d629675a1"
     ),
     .binaryTarget(
       name: "White_YYModel",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/White_YYModel.xcframework.zip",
+      checksum: "e9e3c7a3d2f2b4ef54e305ac52cfd4d1b71e047fd602750b0ed2bc9815cc3df2"
     ),
   ]
 )
