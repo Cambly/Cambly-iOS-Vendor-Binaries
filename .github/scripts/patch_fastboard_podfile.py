@@ -19,6 +19,14 @@ package into an xcframework). Two adjustments are needed before `pod install`:
    deployment target" resolution failure. (A framework's min ≤ the app's min is
    required; 14.0 = app min is the safe maximal choice.)
 
+3. **Force the pod targets' deployment target via a post_install hook.** The
+   `platform :ios` line only sets the *user* (Example app) target. Each pod's
+   framework target inherits its own podspec's `s.ios.deployment_target`
+   (Fastboard / Whiteboard / NTLBridge / White_YYModel all declare `10.0`), so
+   without this the frameworks compile at iOS 10 and fail on iOS-11+ APIs the
+   sources use unguarded (e.g. `'CACornerMask' is only available in iOS 11.0 or
+   newer`). The hook pins every pod target to the same 14.0.
+
 Idempotent: re-running on an already-patched Podfile is a no-op for each edit.
 Invoked by the Makefile's `pod-install` target for VENDOR=fastboard.
 
@@ -30,6 +38,18 @@ import sys
 ANCHOR = "def share\n"
 PLATFORM_TARGET = "14.0"
 PLATFORM_RE = re.compile(r"platform\s*:ios\s*,\s*['\"][0-9.]+['\"]")
+
+POST_INSTALL_MARKER = "# cambly-vendor: force pod target deployment"
+POST_INSTALL_BLOCK = f"""
+{POST_INSTALL_MARKER}
+post_install do |installer|
+  installer.pods_project.targets.each do |t|
+    t.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '{PLATFORM_TARGET}'
+    end
+  end
+end
+"""
 
 
 def main() -> int:
@@ -62,6 +82,17 @@ def main() -> int:
         print(f"❌ could not find a `platform :ios, '<v>'` line in {podfile} — "
               "upstream Podfile layout changed; update this script.", file=sys.stderr)
         return 1
+
+    # 3) Append the post_install hook that forces every pod target's
+    #    IPHONEOS_DEPLOYMENT_TARGET (the `platform` line above only covers the
+    #    user/Example target). Upstream's Podfile has no post_install block.
+    if POST_INSTALL_MARKER in src:
+        print(f"✓ post_install deployment-target hook already present in {podfile}; leaving as-is")
+    else:
+        if not src.endswith("\n"):
+            src += "\n"
+        src += POST_INSTALL_BLOCK
+        print(f"✓ appended post_install hook forcing pod targets to iOS {PLATFORM_TARGET} in {podfile}")
 
     with open(podfile, "w") as f:
         f.write(src)
