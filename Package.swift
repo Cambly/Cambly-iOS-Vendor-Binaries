@@ -145,9 +145,16 @@ let package = Package(
     // (`import Fastboard` / `import Whiteboard`). Each lists the full set of
     // frameworks its top-level framework loads, so SwiftPM embeds every needed
     // xcframework into the consuming app target.
+    //
+    // The Fastboard binary's module is named `FastboardSDK` (not `Fastboard`)
+    // to break a module-name == class-name collision — `module Fastboard` had a
+    // top-level `public class Fastboard`, which made the library-evolution
+    // .swiftinterface fail to recompile under a different Swift version. The
+    // product name stays `Fastboard`; only the imported module differs
+    // (`import FastboardSDK`). See `// === fastboard ===` in targets + README.
     .library(
       name: "Fastboard",
-      targets: ["Fastboard", "Whiteboard", "NTLBridge", "White_YYModel"]
+      targets: ["FastboardSDK", "Whiteboard", "NTLBridge", "White_YYModel"]
     ),
     .library(
       name: "Whiteboard",
@@ -278,8 +285,8 @@ let package = Package(
     // =fastboard). URLs + checksums patched by build-fastboard.yml on each
     // release. Placeholder state until the first workflow run patches them.
     .binaryTarget(
-      name: "Fastboard",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/Fastboard.xcframework.zip",
+      name: "FastboardSDK",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/FastboardSDK.xcframework.zip",
       checksum: "b529c748e69a505eec57ed1bfc2c3b4effe3ff14e9f36bdd5e5cb951119fa36c"
     ),
     .binaryTarget(

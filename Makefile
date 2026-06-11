@@ -168,8 +168,17 @@ ifeq ($(VENDOR),fastboard)
   # numbers differ from the SPM tags (NTLBridge 3.1.x vs SPM DSBridge 3.2.1)
   # and cannot be byte-aligned across package managers; code is equivalent.
   WHITEBOARD_POD_VERSION := 2.16.89
+  # Rename Fastboard's module to break the module-name == class-name collision
+  # (module `Fastboard` contains `public class Fastboard`), which otherwise makes
+  # the library-evolution .swiftinterface fail to recompile under a different
+  # Swift version (built on 26.3/6.2.4, consumed on 26.5/6.3.2). Injected into
+  # Fastboard.podspec as `s.module_name`. The CocoaPods scheme stays `Fastboard`
+  # (= pod name) but now produces FastboardSDK.framework. The other three pods
+  # have no such collision and keep their names. The public class is unchanged,
+  # so Cambly-Swift only swaps `import Fastboard` → `import FastboardSDK`.
+  FASTBOARD_MODULE_NAME := FastboardSDK
   SCHEME_PRODUCT_PAIRS := \
-    "Fastboard:Fastboard" \
+    "Fastboard:FastboardSDK" \
     "Whiteboard:Whiteboard" \
     "NTLBridge:NTLBridge" \
     "White_YYModel:White_YYModel"
@@ -206,9 +215,11 @@ clone: require-args
 # upstream ships a standalone xcodeproj, so there is nothing to pod-install).
 pod-install: clone
 	@if [ -n "$(USE_COCOAPODS)" ]; then \
-	  echo "▶▶▶ CocoaPods vendor '$(VENDOR)': pin Whiteboard $(WHITEBOARD_POD_VERSION) + pod install in $(WORK_DIR)/$(COCOAPODS_DIR)"; \
+	  echo "▶▶▶ CocoaPods vendor '$(VENDOR)': pin Whiteboard $(WHITEBOARD_POD_VERSION) + rename Fastboard module to $(FASTBOARD_MODULE_NAME) + pod install in $(WORK_DIR)/$(COCOAPODS_DIR)"; \
 	  python3 $(CURDIR)/.github/scripts/patch_fastboard_podfile.py \
 	    "$(WORK_DIR)/$(COCOAPODS_DIR)/Podfile" "$(WHITEBOARD_POD_VERSION)" || exit 1; \
+	  python3 $(CURDIR)/.github/scripts/patch_fastboard_podspec.py \
+	    "$(WORK_DIR)/Fastboard.podspec" "$(FASTBOARD_MODULE_NAME)" || exit 1; \
 	  echo "🧹 Removing committed Podfile.lock so the pinned Whiteboard $(WHITEBOARD_POD_VERSION) resolves cleanly (upstream commits a lock pinning the old version, which otherwise conflicts)."; \
 	  rm -f "$(WORK_DIR)/$(COCOAPODS_DIR)/Podfile.lock"; \
 	  ( cd $(WORK_DIR)/$(COCOAPODS_DIR) && pod install --repo-update ) || exit 1; \

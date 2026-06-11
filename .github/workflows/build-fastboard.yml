@@ -100,7 +100,9 @@ jobs:
         env:
           VENDOR: fastboard
           ASSETS_TAG: fastboard-${{ inputs.version }}${{ inputs.tag_suffix }}
-          Fastboard_SHA: ${{ steps.checksums.outputs.Fastboard_sha }}
+          # Fastboard's module is built as `FastboardSDK` (see Makefile
+          # FASTBOARD_MODULE_NAME) → artifact FastboardSDK.xcframework.zip.
+          FastboardSDK_SHA: ${{ steps.checksums.outputs.FastboardSDK_sha }}
           Whiteboard_SHA: ${{ steps.checksums.outputs.Whiteboard_sha }}
           NTLBridge_SHA: ${{ steps.checksums.outputs.NTLBridge_sha }}
           White_YYModel_SHA: ${{ steps.checksums.outputs.White_YYModel_sha }}
