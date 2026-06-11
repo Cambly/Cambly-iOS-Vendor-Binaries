@@ -134,9 +134,50 @@ ifeq ($(VENDOR),promisekit)
     "PromiseKit:PromiseKit"
 endif
 
+# Netless whiteboard stack — the ONLY CocoaPods-mode vendor (USE_COCOAPODS=1).
+# All other vendors above build from a committed standalone xcodeproj; the
+# Netless upstreams do NOT ship one — the only buildable, framework-producing
+# project is the CocoaPods-generated `Example/Fastboard.xcworkspace`, which we
+# regenerate with `pod install` (see the USE_COCOAPODS branch in
+# build-xcframeworks). This single fastboard-iOS clone produces the WHOLE
+# 4-framework dependency cluster (upstream's own `xcframework.sh` does the same):
+#   Fastboard ──▶ Whiteboard ──▶ { NTLBridge (DSBridge), White_YYModel }
+# With `use_frameworks!` each pod is a separate dynamic framework, so all four
+# must be shipped + embedded — Fastboard.framework dyld-links the other three at
+# runtime (they are NOT statically absorbed). This one block therefore delivers
+# both MOB-339 (Fastboard) and MOB-340 (Whiteboard + DSBridge + White_YYModel).
+#
+# Only Fastboard's Example has `use_frameworks!` enabled; Whiteboard-iOS's own
+# Example has it commented out (static-lib mode → no .framework), which is why
+# we build the entire stack from fastboard-iOS rather than per-repo.
+#
+# Scheme names are the CocoaPods pod-target names (verified via `xcodebuild
+# -list` on 1.4.1) — note `NTLBridge` / `White_YYModel`, NOT the stale
+# `dsBridge` / `YYModel` names in upstream's xcframework.sh.
+ifeq ($(VENDOR),fastboard)
+  UPSTREAM_REPO_URL ?= git@github.com:netless-io/fastboard-iOS.git
+  USE_COCOAPODS := 1
+  # CocoaPods project lives in Example/; pod install regenerates the workspace.
+  COCOAPODS_DIR := Example
+  BUILD_PROJECT_FLAG := -workspace Example/Fastboard.xcworkspace
+  # Pin Whiteboard to the version Cambly-Swift currently resolves via SPM
+  # (2.16.89), not Fastboard 1.4.1's default (~> 2.16.81). Injected into the
+  # Example Podfile before `pod install`. Fastboard 1.4.1 requires ~> 2.16.81,
+  # which 2.16.89 satisfies. Transitive NTLBridge / White_YYModel versions are
+  # whatever Whiteboard 2.16.89's podspec resolves — their CocoaPods version
+  # numbers differ from the SPM tags (NTLBridge 3.1.x vs SPM DSBridge 3.2.1)
+  # and cannot be byte-aligned across package managers; code is equivalent.
+  WHITEBOARD_POD_VERSION := 2.16.89
+  SCHEME_PRODUCT_PAIRS := \
+    "Fastboard:Fastboard" \
+    "Whiteboard:Whiteboard" \
+    "NTLBridge:NTLBridge" \
+    "White_YYModel:White_YYModel"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
-.PHONY: all clean clone build-xcframeworks sign-xcframeworks zip checksums require-args
+.PHONY: all clean clone pod-install build-xcframeworks sign-xcframeworks zip checksums require-args
 
 all: require-args build-xcframeworks sign-xcframeworks zip checksums
 
@@ -148,7 +189,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit|fastboard) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 
@@ -159,11 +200,25 @@ clone: require-args
 	mkdir -p $(BUILD_DIR)
 	test -d $(WORK_DIR) || git clone --depth 1 --branch $(VERSION) $(UPSTREAM_REPO_URL) $(WORK_DIR)
 
+# CocoaPods-mode vendors (USE_COCOAPODS=1) build from a `pod install`-generated
+# workspace rather than a committed xcodeproj. Patch the Podfile to pin the
+# Whiteboard version, then resolve pods. No-op for every other vendor (their
+# upstream ships a standalone xcodeproj, so there is nothing to pod-install).
+pod-install: clone
+	@if [ -n "$(USE_COCOAPODS)" ]; then \
+	  echo "▶▶▶ CocoaPods vendor '$(VENDOR)': pin Whiteboard $(WHITEBOARD_POD_VERSION) + pod install in $(WORK_DIR)/$(COCOAPODS_DIR)"; \
+	  python3 $(CURDIR)/.github/scripts/patch_fastboard_podfile.py \
+	    "$(WORK_DIR)/$(COCOAPODS_DIR)/Podfile" "$(WHITEBOARD_POD_VERSION)" || exit 1; \
+	  ( cd $(WORK_DIR)/$(COCOAPODS_DIR) && pod install --repo-update ) || exit 1; \
+	else \
+	  echo "▶▶▶ vendor '$(VENDOR)' is not CocoaPods-mode; skipping pod install"; \
+	fi
+
 # PRODUCTS is derived from SCHEME_PRODUCT_PAIRS for use by zip / checksums.
 # (Bash-level split on ":" inside each pair.)
 PRODUCTS_LIST = $(shell printf '%s\n' $(SCHEME_PRODUCT_PAIRS) | tr -d '"' | awk -F: '{print $$2}')
 
-build-xcframeworks: clone
+build-xcframeworks: clone pod-install
 	mkdir -p $(ARTIFACTS_DIR)
 	@# Loop over scheme:product pairs. Quoted Make tokens like "Alamofire iOS:Alamofire"
 	@# survive shell word-splitting because the surrounding double-quotes are still

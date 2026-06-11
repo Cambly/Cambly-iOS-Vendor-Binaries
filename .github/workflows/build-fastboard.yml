@@ -1,0 +1,138 @@
+name: Build Fastboard (Netless stack)
+
+# Manual trigger only. To cut a new Fastboard / Netless release:
+#   Actions → Build Fastboard (Netless stack) → Run workflow → (set version) → Run.
+#
+# Unlike every other vendor (which builds from a committed standalone xcodeproj),
+# the Netless stack is CocoaPods-mode: it builds from Fastboard's
+# Example/Fastboard.xcworkspace, which we regenerate with `pod install` (the only
+# project in the cluster with `use_frameworks!`). This single fastboard-iOS clone
+# produces the WHOLE 4-framework dependency cluster in one run:
+#   Fastboard → Whiteboard → { NTLBridge (DSBridge), White_YYModel }
+# so this one workflow delivers MOB-339 (Fastboard) AND MOB-340 (Whiteboard +
+# DSBridge + White_YYModel). All four are shipped as separate xcframeworks
+# because, under use_frameworks!, each is a dynamic framework the others
+# dyld-link at runtime — see Package.swift `// === fastboard ===` and README.
+#
+# Produces a GitHub Release tagged `fastboard-<version>` containing all four
+# xcframework zips, then patches Package.swift's `// === fastboard ===` section.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on netless-io/fastboard-iOS (e.g. 1.4.1). Whiteboard is pinned to 2.16.89 inside the Makefile regardless."
+        required: true
+        type: string
+        default: 1.4.1
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version. Leave empty for the very first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+# Serialize across all build-*.yml so two concurrent runs don't race on
+# `git push origin main` while patching Package.swift.
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Ensure CocoaPods is available
+        # macos-15 runners ship CocoaPods preinstalled, but pin-check so a
+        # runner-image change that drops it fails loudly here rather than deep
+        # inside the Makefile's pod-install step.
+        run: |
+          if ! command -v pod >/dev/null 2>&1; then
+            echo "CocoaPods not found on runner; installing…"
+            sudo gem install cocoapods
+          fi
+          pod --version
+
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign Netless xcframeworks via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          make all VENDOR=fastboard VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/netless-io/fastboard-iOS.git
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: fastboard
+          ASSETS_TAG: fastboard-${{ inputs.version }}${{ inputs.tag_suffix }}
+          Fastboard_SHA: ${{ steps.checksums.outputs.Fastboard_sha }}
+          Whiteboard_SHA: ${{ steps.checksums.outputs.Whiteboard_sha }}
+          NTLBridge_SHA: ${{ steps.checksums.outputs.NTLBridge_sha }}
+          White_YYModel_SHA: ${{ steps.checksums.outputs.White_YYModel_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      # Race protection: actions/checkout pins to trigger-time SHA, so rebase
+      # onto current origin/main before push to handle concurrent vendor builds.
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Fastboard (Netless stack) binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="fastboard-${{ inputs.version }}${{ inputs.tag_suffix }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframeworks for the Netless whiteboard stack (Fastboard + Whiteboard + NTLBridge + White_YYModel), built from netless-io/fastboard-iOS@${{ inputs.version }} CocoaPods-mode (Example/Fastboard.xcworkspace) with BUILD_LIBRARY_FOR_DISTRIBUTION=YES. Whiteboard pinned to 2.16.89. Delivers MOB-339 + MOB-340."

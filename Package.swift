@@ -132,6 +132,27 @@ let package = Package(
       name: "PromiseKit",
       targets: ["PromiseKit"]
     ),
+    // === fastboard ===
+    // Built from netless-io/fastboard-iOS@<version> CocoaPods-mode (from
+    // Fastboard's Example/Fastboard.xcworkspace) — produces the whole Netless
+    // dependency cluster in one build: Fastboard → Whiteboard → { NTLBridge
+    // (the DSBridge-IOS pod), White_YYModel }. Under `use_frameworks!` each pod
+    // is a separate dynamic framework that the others dyld-link at runtime, so
+    // every consumer must link + embed all four — they are NOT statically
+    // absorbed into Fastboard.framework.
+    //
+    // Two products preserve Cambly-Swift's existing import sites unchanged
+    // (`import Fastboard` / `import Whiteboard`). Each lists the full set of
+    // frameworks its top-level framework loads, so SwiftPM embeds every needed
+    // xcframework into the consuming app target.
+    .library(
+      name: "Fastboard",
+      targets: ["Fastboard", "Whiteboard", "NTLBridge", "White_YYModel"]
+    ),
+    .library(
+      name: "Whiteboard",
+      targets: ["Whiteboard", "NTLBridge", "White_YYModel"]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -249,6 +270,32 @@ let package = Package(
       name: "PromiseKit",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/promisekit-6.22.1-signed/PromiseKit.xcframework.zip",
       checksum: "af631ad5f9551410cff3fa3b854acd163d4a54bd506bccc2ebb3e55168a423a6"
+    ),
+    // === fastboard ===
+    // Source: netless-io/fastboard-iOS (+ transitive netless-io/Whiteboard-iOS,
+    // DSBridge-IOS [CocoaPods pod name: NTLBridge], White_YYModel). Built
+    // CocoaPods-mode from Fastboard's Example workspace (see Makefile VENDOR
+    // =fastboard). URLs + checksums patched by build-fastboard.yml on each
+    // release. Placeholder state until the first workflow run patches them.
+    .binaryTarget(
+      name: "Fastboard",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "Whiteboard",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "NTLBridge",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "White_YYModel",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-PENDING/PLACEHOLDER.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )
