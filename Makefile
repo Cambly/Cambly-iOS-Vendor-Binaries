@@ -209,6 +209,8 @@ pod-install: clone
 	  echo "▶▶▶ CocoaPods vendor '$(VENDOR)': pin Whiteboard $(WHITEBOARD_POD_VERSION) + pod install in $(WORK_DIR)/$(COCOAPODS_DIR)"; \
 	  python3 $(CURDIR)/.github/scripts/patch_fastboard_podfile.py \
 	    "$(WORK_DIR)/$(COCOAPODS_DIR)/Podfile" "$(WHITEBOARD_POD_VERSION)" || exit 1; \
+	  echo "🧹 Removing committed Podfile.lock so the pinned Whiteboard $(WHITEBOARD_POD_VERSION) resolves cleanly (upstream commits a lock pinning the old version, which otherwise conflicts)."; \
+	  rm -f "$(WORK_DIR)/$(COCOAPODS_DIR)/Podfile.lock"; \
 	  ( cd $(WORK_DIR)/$(COCOAPODS_DIR) && pod install --repo-update ) || exit 1; \
 	else \
 	  echo "▶▶▶ vendor '$(VENDOR)' is not CocoaPods-mode; skipping pod install"; \
