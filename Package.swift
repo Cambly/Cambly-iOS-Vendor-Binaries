@@ -286,23 +286,23 @@ let package = Package(
     // release. Placeholder state until the first workflow run patches them.
     .binaryTarget(
       name: "FastboardSDK",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/FastboardSDK.xcframework.zip",
-      checksum: "b529c748e69a505eec57ed1bfc2c3b4effe3ff14e9f36bdd5e5cb951119fa36c"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/FastboardSDK.xcframework.zip",
+      checksum: "49d7e749e41f7528855cefdd6dbbed5ae4371d3e1d69af38188305b1ec8fae10"
     ),
     .binaryTarget(
       name: "Whiteboard",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/Whiteboard.xcframework.zip",
-      checksum: "3fe314413330163c8e32659b6878b14e1fc9ce3b9c7ee466ef806d2af14f7da8"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/Whiteboard.xcframework.zip",
+      checksum: "8b5acce6d7f4bf8b29ee040ede9a1ef3c49d596d8e73e73e74d2acc012d629f0"
     ),
     .binaryTarget(
       name: "NTLBridge",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/NTLBridge.xcframework.zip",
-      checksum: "2e0e22b1047283ae14b597e97c85d0cf1b31667a0647d60aa9f9f69d629675a1"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/NTLBridge.xcframework.zip",
+      checksum: "8ee685ab0730cd4bfa6a11bdda8ee42f17ad8ad3e68866ae2dda98a2435f51e6"
     ),
     .binaryTarget(
       name: "White_YYModel",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1/White_YYModel.xcframework.zip",
-      checksum: "e9e3c7a3d2f2b4ef54e305ac52cfd4d1b71e047fd602750b0ed2bc9815cc3df2"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/White_YYModel.xcframework.zip",
+      checksum: "505993b6e2fbbddc3d1b4f2ec4e9029cb2049efcd0336b9c6c5f8eaf23caf92a"
     ),
   ]
 )
