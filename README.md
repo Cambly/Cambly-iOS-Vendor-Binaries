@@ -28,7 +28,7 @@ Versions tracked:
 | `PostHog` | `PostHog/posthog-ios@3.58.3` | `posthog-3.58.3` | `PostHog` scheme in `PostHog.xcodeproj` |
 | `IterableSDK` | `Iterable/iterable-swift-sdk@6.7.1` | `iterable-6.7.1` | `swift-sdk` scheme in `swift-sdk.xcodeproj` (scheme builds `IterableSDK.framework`) |
 | `Starscream` | `daltoniam/Starscream@4.0.8` | `starscream-4.0.8` | `Starscream` scheme in `Starscream.xcodeproj` |
-| `Fastboard` + `Whiteboard` + `NTLBridge` + `White_YYModel` (the Netless stack) | `netless-io/fastboard-iOS@1.4.1` (+ transitive `Whiteboard-iOS@2.16.89`, `DSBridge-IOS`, `White_YYModel`) | `fastboard-1.4.1` | **CocoaPods-mode** — `Fastboard` / `Whiteboard` / `NTLBridge` / `White_YYModel` schemes in `pod install`-generated `Example/Fastboard.xcworkspace`. See "CocoaPods-mode vendors" below. |
+| `FastboardSDK` + `Whiteboard` + `NTLBridge` + `White_YYModel` (the Netless stack) | `netless-io/fastboard-iOS@1.4.1` (+ transitive `Whiteboard-iOS@2.16.89`, `DSBridge-IOS`, `White_YYModel`) | `fastboard-1.4.1-r2` | **CocoaPods-mode** — `Fastboard` / `Whiteboard` / `NTLBridge` / `White_YYModel` schemes in `pod install`-generated `Example/Fastboard.xcworkspace`. Fastboard's module is renamed to `FastboardSDK` (the `.library` product stays `Fastboard`). See "CocoaPods-mode vendors" below. |
 
 Cambly-Swift pins this repo by `revision: <vendor>-<version>` (typically the most recently bumped vendor's tag — the commit at that tag carries all vendors' current URLs/checksums, since each workflow patches the shared `Package.swift`).
 
