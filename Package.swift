@@ -349,38 +349,38 @@ let package = Package(
     // workflow run patches them.
     .binaryTarget(
       name: "InstantSearch",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearch.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/InstantSearch.xcframework.zip",
+      checksum: "febe602382a942c542c3c9d957cecffa06f39d9afc1e7af5ddc2f187830dee9d"
     ),
     .binaryTarget(
       name: "InstantSearchCore",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchCore.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/InstantSearchCore.xcframework.zip",
+      checksum: "00281a5cff8da53f248a9c3ed4f6e86b69cc794c10973fb590c206a562578a87"
     ),
     .binaryTarget(
       name: "AlgoliaSearchClient",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/AlgoliaSearchClient.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/AlgoliaSearchClient.xcframework.zip",
+      checksum: "724258f880a35a138c8b5eec02e1e13ceb2e5d88e4bb666f986d2041f154cd34"
     ),
     .binaryTarget(
       name: "InstantSearchInsights",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchInsights.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/InstantSearchInsights.xcframework.zip",
+      checksum: "7517f0b8aaa8f33975812c97c72b3257aecd19cf2e9ac8960b1dc2a242c7e924"
     ),
     .binaryTarget(
       name: "InstantSearchTelemetry",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchTelemetry.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/InstantSearchTelemetry.xcframework.zip",
+      checksum: "5fe261d34b849a324868bb0c5bbfd9bbfd0b1575afb3caec67efaa48b56fdae5"
     ),
     .binaryTarget(
       name: "Logging",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/Logging.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/Logging.xcframework.zip",
+      checksum: "835ca1f59716b30eb79a9674d7688bc0761a09ea1febde1eb31eb99c297bed91"
     ),
     .binaryTarget(
       name: "SwiftProtobuf",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/SwiftProtobuf.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/SwiftProtobuf.xcframework.zip",
+      checksum: "c3b40af581c9aaf0efbb9b5c83e573be6406499ff540741009c0434dd2a809c7"
     ),
   ]
 )
