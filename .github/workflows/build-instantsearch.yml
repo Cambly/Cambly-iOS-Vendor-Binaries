@@ -1,0 +1,150 @@
+name: Build InstantSearch
+
+# Manual trigger only. To cut a new InstantSearch release:
+#   Actions → Build InstantSearch → Run workflow → (set version) → Run.
+#
+# Produces a GitHub Release tagged `instantsearch-<version>` containing 7
+# xcframework zips (InstantSearch + InstantSearchCore + AlgoliaSearchClient +
+# InstantSearchInsights + InstantSearchTelemetry + Logging + SwiftProtobuf),
+# then patches Package.swift's `// === instantsearch ===` section with the new
+# urls + checksums and commits it to main.
+#
+# Unlike every other build-*.yml, InstantSearch is SPM-mode (USE_SPM=1 in the
+# Makefile): instantsearch-ios is pure SwiftPM with no framework-producing
+# xcodeproj, so the Makefile builds it via unsignedapps/swift-create-xcframework
+# rather than `xcodebuild archive`. We install lonepalm's prebuilt fork (the
+# archived upstream binary can't compile against the macOS 26 SDK — same install
+# path the earlier Google-auth attempt used).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on algolia/instantsearch-ios (e.g. 7.27.0)"
+        required: true
+        type: string
+        default: 7.27.0
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same upstream version. Leave empty for the first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
+      tool_ref:
+        description: "lonepalm/swift-create-xcframework git ref (branch or commit) — the macOS-26 prebuilt fork."
+        required: true
+        type: string
+        default: "master"
+
+permissions:
+  contents: write
+
+# Serialize across all build-*.yml so two concurrent runs don't race on
+# `git push origin main` while patching Package.swift.
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install swift-create-xcframework (lonepalm prebuilt macOS-26 binary)
+        # unsignedapps/swift-create-xcframework@v2.3.0 is archived and its
+        # transitive dep swift-llbuild can't compile against the macOS 26 SDK.
+        # lonepalm/swift-create-xcframework commits a prebuilt binary patched
+        # for macOS 26 at the repo root — clone + install. (See the reverted
+        # build-google-auth.yml in git history for the original context.)
+        run: |
+          git clone --depth 1 --branch "${{ inputs.tool_ref }}" \
+            https://github.com/lonepalm/swift-create-xcframework.git /tmp/sc-xcf
+          test -f /tmp/sc-xcf/swift-create-xcframework || { echo "❌ prebuilt binary not at repo root"; ls /tmp/sc-xcf; exit 1; }
+          sudo install -m 755 /tmp/sc-xcf/swift-create-xcframework /usr/local/bin/swift-create-xcframework
+          swift-create-xcframework --help | head -n 3 || true
+
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign InstantSearch xcframeworks via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          make all VENDOR=instantsearch VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/algolia/instantsearch-ios.git
+
+      - name: Compute checksums
+        id: checksums
+        # Generic over every produced zip → emits one `<Name>_sha` output per
+        # xcframework (InstantSearch_sha, Logging_sha, …) for the patch step.
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: instantsearch
+          ASSETS_TAG: instantsearch-${{ inputs.version }}${{ inputs.tag_suffix }}
+          InstantSearch_SHA: ${{ steps.checksums.outputs.InstantSearch_sha }}
+          InstantSearchCore_SHA: ${{ steps.checksums.outputs.InstantSearchCore_sha }}
+          AlgoliaSearchClient_SHA: ${{ steps.checksums.outputs.AlgoliaSearchClient_sha }}
+          InstantSearchInsights_SHA: ${{ steps.checksums.outputs.InstantSearchInsights_sha }}
+          InstantSearchTelemetry_SHA: ${{ steps.checksums.outputs.InstantSearchTelemetry_sha }}
+          Logging_SHA: ${{ steps.checksums.outputs.Logging_sha }}
+          SwiftProtobuf_SHA: ${{ steps.checksums.outputs.SwiftProtobuf_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      # Race protection: see build-facebook.yml for the explanation. tl;dr
+      # actions/checkout pins to trigger-time SHA, so rebase onto current
+      # origin/main before push to handle concurrent vendor builds.
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update InstantSearch binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="instantsearch-${{ inputs.version }}${{ inputs.tag_suffix }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt xcframeworks for algolia/instantsearch-ios@${{ inputs.version }} (+ transitive AlgoliaSearchClient / InstantSearchInsights / InstantSearchTelemetry / swift-log / swift-protobuf). Built SPM-mode via lonepalm/swift-create-xcframework@${{ inputs.tool_ref }} with library evolution; swift-log patched for evolution (see .github/scripts/patch_swiftlog.py). All 7 frameworks must be embedded by each consuming app target."
