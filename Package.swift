@@ -160,6 +160,40 @@ let package = Package(
       name: "Whiteboard",
       targets: ["Whiteboard", "NTLBridge", "White_YYModel"]
     ),
+    // === instantsearch ===
+    // Built from algolia/instantsearch-ios@7.27.0 SPM-mode via
+    // swift-create-xcframework (the only USE_SPM=1 vendor — see Makefile
+    // VENDOR=instantsearch). instantsearch-ios is pure SwiftPM with no
+    // framework-producing xcodeproj, so it can't go through the xcodebuild-
+    // archive path the other vendors use.
+    //
+    // swift-create-xcframework builds every module — including the transitive
+    // dependency packages — as a SEPARATE dynamic framework, and the top-level
+    // ones dyld-link the rest at runtime (NOT statically absorbed). So this one
+    // product must list all 7 binary targets, same multi-framework shipping
+    // model as the Netless stack: the consumer's app target embeds every one.
+    //
+    // `import InstantSearch` re-exports InstantSearchCore which re-exports
+    // AlgoliaSearchClient (@_exported), so both import sites Cambly-Swift uses
+    // (`import InstantSearch`, `import AlgoliaSearchClient`) resolve from this
+    // single product — no separate AlgoliaSearchClient product needed.
+    // Logging (swift-log) / SwiftProtobuf (swift-protobuf) / InstantSearchInsights
+    // / InstantSearchTelemetry are transitive runtime deps; nobody imports them
+    // directly, but they must ship + embed because InstantSearch/Core dyld-link
+    // them (and InstantSearchCore's public .swiftinterface imports the first
+    // three). URLs + checksums patched by build-instantsearch.yml on each release.
+    .library(
+      name: "InstantSearch",
+      targets: [
+        "InstantSearch",
+        "InstantSearchCore",
+        "AlgoliaSearchClient",
+        "InstantSearchInsights",
+        "InstantSearchTelemetry",
+        "Logging",
+        "SwiftProtobuf",
+      ]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -303,6 +337,50 @@ let package = Package(
       name: "White_YYModel",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/White_YYModel.xcframework.zip",
       checksum: "505993b6e2fbbddc3d1b4f2ec4e9029cb2049efcd0336b9c6c5f8eaf23caf92a"
+    ),
+
+    // === instantsearch ===
+    // Source: algolia/instantsearch-ios (+ transitive algoliasearch-client-swift,
+    // instantsearch-telemetry-native, apple/swift-log, apple/swift-protobuf).
+    // Built SPM-mode via swift-create-xcframework — see Makefile VENDOR
+    // =instantsearch + the `// === instantsearch ===` product comment above.
+    // URLs + checksums patched by build-instantsearch.yml on each release.
+    // Placeholder state (PENDING url + 64-zero checksum) until the first
+    // workflow run patches them.
+    .binaryTarget(
+      name: "InstantSearch",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearch.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "InstantSearchCore",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchCore.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "AlgoliaSearchClient",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/AlgoliaSearchClient.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "InstantSearchInsights",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchInsights.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "InstantSearchTelemetry",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/InstantSearchTelemetry.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "Logging",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/Logging.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "SwiftProtobuf",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/SwiftProtobuf.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

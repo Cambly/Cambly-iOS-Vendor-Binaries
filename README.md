@@ -29,6 +29,7 @@ Versions tracked:
 | `IterableSDK` | `Iterable/iterable-swift-sdk@6.7.1` | `iterable-6.7.1` | `swift-sdk` scheme in `swift-sdk.xcodeproj` (scheme builds `IterableSDK.framework`) |
 | `Starscream` | `daltoniam/Starscream@4.0.8` | `starscream-4.0.8` | `Starscream` scheme in `Starscream.xcodeproj` |
 | `FastboardSDK` + `Whiteboard` + `NTLBridge` + `White_YYModel` (the Netless stack) | `netless-io/fastboard-iOS@1.4.1` (+ transitive `Whiteboard-iOS@2.16.89`, `DSBridge-IOS`, `White_YYModel`) | `fastboard-1.4.1-r2` | **CocoaPods-mode** — `Fastboard` / `Whiteboard` / `NTLBridge` / `White_YYModel` schemes in `pod install`-generated `Example/Fastboard.xcworkspace`. Fastboard's module is renamed to `FastboardSDK` (the `.library` product stays `Fastboard`). See "CocoaPods-mode vendors" below. |
+| `InstantSearch` (umbrella; product also ships `InstantSearchCore` + `AlgoliaSearchClient` + `InstantSearchInsights` + `InstantSearchTelemetry` + `Logging` + `SwiftProtobuf`) | `algolia/instantsearch-ios@7.27.0` (+ transitive `algoliasearch-client-swift`, `instantsearch-telemetry-native`, `apple/swift-log`, `apple/swift-protobuf`) | `instantsearch-7.27.0` | **SPM-mode** — `swift-create-xcframework` on the pure-SwiftPM package (no framework xcodeproj). 7 dynamic frameworks; swift-log patched for library evolution. See "SPM-mode vendor" below. |
 
 Cambly-Swift pins this repo by `revision: <vendor>-<version>` (typically the most recently bumped vendor's tag — the commit at that tag carries all vendors' current URLs/checksums, since each workflow patches the shared `Package.swift`).
 
@@ -45,7 +46,16 @@ Every vendor above builds from a **committed standalone xcodeproj** at its upstr
 - **Resource bundles — verify on first build.** The Example workspace also contains CocoaPods resource-bundle schemes (`Fastboard-Icons`, `Fastboard-LocalizedStrings`, `Whiteboard-Whiteboard`). With `use_frameworks!` these are expected to land inside each `.framework`; the Makefile's post-archive `find` dump shows the framework contents — confirm the resources are present before signing/shipping the first release.
 - **Runner needs CocoaPods.** macos-15 ships it preinstalled; `build-fastboard.yml` verifies `pod --version` and installs it if missing. Local runs need a working `pod` (the brew-cocoapods + rbenv combo on some machines mis-resolves the `ffi` gem — use a clean Ruby).
 
-More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) is currently **blocked**: those packages are SPM-only (no upstream xcodeproj), and our xcodeproj-mode pipeline doesn't fit. Other SPM-only candidates in Cambly-Swift today (`InstantSearch`, `BSON`, `Nantes`, `Reusable`, `MultiSlider`) face the same constraint — they would need a `swift-create-xcframework` based pipeline; see the abandoned attempt for Google auth in git history (reverted in `113f18b`) for the negative result and the kinds of issues that path runs into.
+### SPM-mode vendor (InstantSearch)
+
+`InstantSearch` is the one **SPM-mode** vendor (`USE_SPM=1` in the Makefile). `algolia/instantsearch-ios` is pure SwiftPM with no framework-producing xcodeproj (only an `Examples` app), so neither the xcodeproj-mode nor the CocoaPods-mode path applies. It builds via [`unsignedapps/swift-create-xcframework`](https://github.com/unsignedapps/swift-create-xcframework) — using **lonepalm's prebuilt fork** (the archived upstream binary can't compile against the macOS 26 SDK; `build-instantsearch.yml` installs it the same way the reverted Google-auth attempt did).
+
+- **All 7 modules ship + embed.** `swift-create-xcframework` builds every module — including the transitive dependency packages — as a **separate dynamic framework**; the top-level ones dyld-link the rest at runtime (**not** statically absorbed, same as the Netless stack). So the `InstantSearch` product lists all 7 `.binaryTarget`s — `InstantSearch`, `InstantSearchCore`, `AlgoliaSearchClient`, `InstantSearchInsights`, `InstantSearchTelemetry`, `Logging` (swift-log), `SwiftProtobuf` (swift-protobuf) — and every consuming app target must embed all of them (see "Audit every app target"). Cambly-Swift's two import sites (`import InstantSearch`, `import AlgoliaSearchClient`) both resolve from this single product because `import InstantSearch` `@_exported`-chains through `InstantSearchCore` → `AlgoliaSearchClient`.
+- **Two-stage build.** A single `swift-create-xcframework` run can't emit all 7: listing interdependent targets makes it archive each as its own scheme and fail to resolve siblings (`unable to resolve module dependency: 'Logging'`). So the Makefile (1) builds the 3 top-level products (`InstantSearch` / `InstantSearchCore` / `AlgoliaSearchClient`) with `--stack-evolution`, which also builds the whole dependency stack with library evolution, leaving an archive where all 7 frameworks carry a `.swiftinterface`; then (2) repackages the other 4 from that archive's `Products/Library/Frameworks` via `xcodebuild -create-xcframework`. The 4 deps need real interfaces (not just stripping) because `InstantSearchCore`'s public `.swiftinterface` `import`s `InstantSearchInsights` / `InstantSearchTelemetry` / `Logging`.
+- **swift-log patch.** swift-log's `Logger.Storage.init` is `@inlinable`, which a library-evolution build rejects (`initializer ... is '@inlinable' and must delegate to another initializer`). `.github/scripts/patch_swiftlog.py` downgrades it to `@usableFromInline` (no behavior change) after `swift package resolve` materializes the checkout. swift-protobuf builds under evolution unchanged. The patch fails loudly if the pinned swift-log version drifts away from the expected pattern.
+- **Deployment target.** `--xc-setting IPHONEOS_DEPLOYMENT_TARGET=17.0` (matches this repo's `.iOS(.v17)`) is forced via `--xc-setting`, **not** `--xcconfig` (which silently no-ops — same finding as the Google-auth iterations). Without a uniform floor, dependency targets get a different deployment target than the root and module imports fail across them.
+
+More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) remains **blocked**: it's SPM-only *and* mixes ObjC with system-framework linking (GTMSessionFetcher / AppAuth → UIKit / Security / AuthenticationServices / SafariServices), which `swift-create-xcframework`'s generated xcodeproj couldn't get to compile + link simultaneously (8 iterations, reverted in `113f18b`). The InstantSearch SPM-mode pipeline above does **not** unblock it — InstantSearch is pure Swift with no system-framework linking, which is exactly why the same tool works there. The remaining small SPM-only candidates that *are* pure Swift (`BSON`, `Reusable`, `MultiSlider`, test-only `ViewInspector` / `swift-snapshot-testing` / `Mocker`) can now follow the InstantSearch `USE_SPM` pattern.
 
 ## How it works
 
@@ -179,9 +189,20 @@ Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section
      BUILD_PROJECT_FLAG := -project Lib/<Name>.xcodeproj
      SCHEME_PRODUCT_PAIRS := "<scheme>:<output-product-name>"
    endif
+
+   # Pattern C — SPM-mode (no framework xcodeproj; pure SwiftPM). Builds via
+   # swift-create-xcframework instead of `xcodebuild archive`. See InstantSearch.
+   ifeq ($(VENDOR),<vendor-key>)
+     USE_SPM := 1
+     SPM_DEPLOYMENT_TARGET := 17.0
+     SPM_BUILD_PRODUCTS := <top-level products to build with evolution>
+     SPM_EXTRA_FRAMEWORKS := <transitive-dep frameworks to extract from the archive>
+     # All product names (build + extra), used by sign / zip / checksum:
+     SCHEME_PRODUCT_PAIRS := "<Name>:<Name>" ...
+   endif
    ```
-   Add `<vendor-key>` to the `case` statement in `require-args`. Use quoted `"scheme:product"` tokens to handle scheme names with spaces / parens (e.g. `"Alamofire iOS:Alamofire"`, `"Lottie (iOS):Lottie"`).
-3. **`.github/workflows/build-<vendor>.yml`** — copy `build-alamofire.yml` (simplest template), change:
+   Add `<vendor-key>` to the `case` statement in `require-args`. Use quoted `"scheme:product"` tokens to handle scheme names with spaces / parens (e.g. `"Alamofire iOS:Alamofire"`, `"Lottie (iOS):Lottie"`). For Pattern C, list **all** shipped frameworks in `SCHEME_PRODUCT_PAIRS` (it only feeds `PRODUCTS_LIST` for sign/zip/checksum there); `SPM_BUILD_PRODUCTS` + `SPM_EXTRA_FRAMEWORKS` drive the actual build. If a Pattern-C package pulls swift-log, add a `patch_swiftlog.py` call (see the `USE_SPM` branch in `build-xcframeworks`).
+3. **`.github/workflows/build-<vendor>.yml`** — copy `build-alamofire.yml` (simplest template; for SPM-mode copy `build-instantsearch.yml`, which adds the swift-create-xcframework install step), change:
    - `name:` and the `workflow_dispatch` description / default version
    - `VENDOR` env (used by patch script)
    - `ASSETS_TAG: <vendor-key>-${{ inputs.version }}`
