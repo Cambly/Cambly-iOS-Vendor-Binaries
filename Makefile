@@ -228,11 +228,27 @@ ifeq ($(VENDOR),instantsearch)
   UPSTREAM_REPO_URL ?= git@github.com:algolia/instantsearch-ios.git
   USE_SPM := 1
   SPM_DEPLOYMENT_TARGET := 17.0
-  # Stage-1 products built+emitted directly by swift-create-xcframework.
+  # Products swift-create-xcframework BUILDS with --stack-evolution. Building the
+  # top-level `InstantSearch` product leaves an archive containing the whole stack
+  # (all 7 frameworks, each with a .swiftinterface). We then create every shipped
+  # xcframework ourselves from that single archive (below), so the tool's own
+  # --output xcframeworks are discarded.
   SPM_BUILD_PRODUCTS := InstantSearch InstantSearchCore AlgoliaSearchClient
-  # Stage-2 transitive-dep frameworks extracted from the stage-1 archive.
-  SPM_EXTRA_FRAMEWORKS := InstantSearchInsights InstantSearchTelemetry Logging SwiftProtobuf
-  # All 7 product names, used by sign / zip / checksum (via PRODUCTS_LIST).
+  # Rename the vendored SwiftProtobuf framework → ISSwiftProtobuf before packaging.
+  # instantsearch-telemetry pulls apple/swift-protobuf, but Cambly-Swift's graph
+  # already has apple/swift-protobuf from source (Cambly-Analytics-Tags @ 1.38);
+  # a `.binaryTarget(name: "SwiftProtobuf")` would collide on the global target
+  # name. swift-create-xcframework can't honor a SwiftPM moduleAlias (its generated
+  # xcodeproj breaks the module's internal self-references), so we rename the
+  # framework at the Mach-O/bundle level after the build instead. Nobody imports
+  # this module (it's a pure runtime dep of InstantSearchTelemetry), so the rename
+  # is invisible to consumers. See postprocess_instantsearch.py.
+  SPM_PROTOBUF_OLD := SwiftProtobuf
+  SPM_PROTOBUF_NEW := ISSwiftProtobuf
+  # All 7 frameworks we ship + their final names (SwiftProtobuf → ISSwiftProtobuf).
+  SPM_SHIP_FRAMEWORKS := InstantSearch InstantSearchCore AlgoliaSearchClient InstantSearchInsights InstantSearchTelemetry Logging $(SPM_PROTOBUF_NEW)
+  # Product names for sign / zip / checksum (via PRODUCTS_LIST) — must match the
+  # shipped framework names, i.e. ISSwiftProtobuf, not SwiftProtobuf.
   SCHEME_PRODUCT_PAIRS := \
     "InstantSearch:InstantSearch" \
     "InstantSearchCore:InstantSearchCore" \
@@ -240,7 +256,7 @@ ifeq ($(VENDOR),instantsearch)
     "InstantSearchInsights:InstantSearchInsights" \
     "InstantSearchTelemetry:InstantSearchTelemetry" \
     "Logging:Logging" \
-    "SwiftProtobuf:SwiftProtobuf"
+    "ISSwiftProtobuf:ISSwiftProtobuf"
 endif
 
 # ─── Targets ────────────────────────────────────────────────────────────────
@@ -293,7 +309,7 @@ PRODUCTS_LIST = $(shell printf '%s\n' $(SCHEME_PRODUCT_PAIRS) | tr -d '"' | awk 
 build-xcframeworks: clone pod-install
 	mkdir -p $(ARTIFACTS_DIR)
 ifeq ($(USE_SPM),1)
-	@echo "▶▶▶ SPM-mode vendor '$(VENDOR)': swift-create-xcframework ($(words $(SPM_BUILD_PRODUCTS)) products) + extract $(words $(SPM_EXTRA_FRAMEWORKS)) deps from archive"
+	@echo "▶▶▶ SPM-mode vendor '$(VENDOR)': swift-create-xcframework builds the stack, then we rename $(SPM_PROTOBUF_OLD)→$(SPM_PROTOBUF_NEW) and package $(words $(SPM_SHIP_FRAMEWORKS)) frameworks from the archive"
 	@# Materialize SwiftPM checkouts via swift-create-xcframework's OWN resolver
 	@# (--list-products resolves + checks out without building) so the swift-log
 	@# version we patch is the SAME one the build uses. `swift package resolve`
@@ -304,22 +320,33 @@ ifeq ($(USE_SPM),1)
 	cd $(WORK_DIR) && $(SWIFT_CREATE_XCFRAMEWORK) --list-products
 	python3 $(CURDIR)/.github/scripts/patch_swiftlog.py \
 	  "$(WORK_DIR)/.build/checkouts/swift-log"
-	@echo "▶▶▶ Stage 1: build [$(SPM_BUILD_PRODUCTS)] with library evolution"
+	@echo "▶▶▶ Build [$(SPM_BUILD_PRODUCTS)] with library evolution (leaves a full-stack archive)"
+	@# --output goes to scratch: the tool's own xcframeworks still reference
+	@# @rpath/$(SPM_PROTOBUF_OLD).framework, so we discard them and build every
+	@# shipped xcframework ourselves from the post-processed archive instead.
 	cd $(WORK_DIR) && $(SWIFT_CREATE_XCFRAMEWORK) \
 	  --platform ios \
 	  --stack-evolution \
 	  --xc-setting IPHONEOS_DEPLOYMENT_TARGET=$(SPM_DEPLOYMENT_TARGET) \
-	  --output $(CURDIR)/$(ARTIFACTS_DIR)/ \
+	  --output $(CURDIR)/$(BUILD_DIR)/spm-scratch/ \
 	  $(SPM_BUILD_PRODUCTS)
-	@# Stage 2: the transitive-dep frameworks are present (each with a
-	@# .swiftinterface, thanks to --stack-evolution) under the primary product's
-	@# archive. Repackage each device+sim pair into its own xcframework. The
-	@# primary product links the entire stack, so its archive contains all of them.
+	@# Post-process + package. The top-level product's archive links the whole
+	@# stack, so its Frameworks/ dir holds all 7 frameworks (each with a
+	@# .swiftinterface from --stack-evolution). For each device/sim slice: rename
+	@# $(SPM_PROTOBUF_OLD).framework → $(SPM_PROTOBUF_NEW).framework and repoint
+	@# every consumer's dyld load command. Then create one xcframework per shipped
+	@# framework from the patched slices.
 	@primary="$(firstword $(SPM_BUILD_PRODUCTS))"; \
-	 dev="$(WORK_DIR)/.build/swift-create-xcframework/build/$$primary/iphoneos.xcarchive/Products/Library/Frameworks"; \
-	 sim="$(WORK_DIR)/.build/swift-create-xcframework/build/$$primary/iphonesimulator.xcarchive/Products/Library/Frameworks"; \
-	 for m in $(SPM_EXTRA_FRAMEWORKS); do \
-	   echo "📦 Extracting dep $$m.xcframework from $$primary archive"; \
+	 archbase="$(WORK_DIR)/.build/swift-create-xcframework/build/$$primary"; \
+	 dev="$$archbase/iphoneos.xcarchive/Products/Library/Frameworks"; \
+	 sim="$$archbase/iphonesimulator.xcarchive/Products/Library/Frameworks"; \
+	 for slice in "$$dev" "$$sim"; do \
+	   echo "🔧 Renaming $(SPM_PROTOBUF_OLD)→$(SPM_PROTOBUF_NEW) in $$slice"; \
+	   python3 $(CURDIR)/.github/scripts/postprocess_instantsearch.py \
+	     "$$slice" $(SPM_PROTOBUF_OLD) $(SPM_PROTOBUF_NEW) || exit 1; \
+	 done; \
+	 for m in $(SPM_SHIP_FRAMEWORKS); do \
+	   echo "📦 Creating $$m.xcframework from post-processed archive"; \
 	   if [ ! -d "$$dev/$$m.framework" ] || [ ! -d "$$sim/$$m.framework" ]; then \
 	     echo "❌ $$m.framework missing in archive"; echo "device:"; ls "$$dev"; echo "sim:"; ls "$$sim"; exit 1; \
 	   fi; \

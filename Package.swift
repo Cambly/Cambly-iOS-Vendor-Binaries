@@ -177,11 +177,20 @@ let package = Package(
     // AlgoliaSearchClient (@_exported), so both import sites Cambly-Swift uses
     // (`import InstantSearch`, `import AlgoliaSearchClient`) resolve from this
     // single product — no separate AlgoliaSearchClient product needed.
-    // Logging (swift-log) / SwiftProtobuf (swift-protobuf) / InstantSearchInsights
-    // / InstantSearchTelemetry are transitive runtime deps; nobody imports them
-    // directly, but they must ship + embed because InstantSearch/Core dyld-link
-    // them (and InstantSearchCore's public .swiftinterface imports the first
-    // three). URLs + checksums patched by build-instantsearch.yml on each release.
+    // Logging (swift-log) / ISSwiftProtobuf (swift-protobuf, renamed) /
+    // InstantSearchInsights / InstantSearchTelemetry are transitive runtime deps;
+    // nobody imports them directly, but they must ship + embed because
+    // InstantSearch/Core dyld-link them (and InstantSearchCore's public
+    // .swiftinterface imports Logging / Insights / Telemetry).
+    //
+    // ISSwiftProtobuf is apple/swift-protobuf renamed at the Mach-O/bundle level
+    // (build-instantsearch.yml → postprocess_instantsearch.py). Cambly-Swift's
+    // graph already has apple/swift-protobuf from source (Cambly-Analytics-Tags),
+    // so a `SwiftProtobuf` binary target would collide on SwiftPM's global
+    // target-name uniqueness. The renamed framework has its `Modules/` stripped,
+    // so it is embedded for InstantSearchTelemetry's runtime dyld dependency but
+    // is NOT importable (no `import ISSwiftProtobuf`) — it ships, it doesn't
+    // expose a module. URLs + checksums patched by build-instantsearch.yml.
     .library(
       name: "InstantSearch",
       targets: [
@@ -191,7 +200,7 @@ let package = Package(
         "InstantSearchInsights",
         "InstantSearchTelemetry",
         "Logging",
-        "SwiftProtobuf",
+        "ISSwiftProtobuf",
       ]
     ),
   ],
@@ -377,10 +386,14 @@ let package = Package(
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/Logging.xcframework.zip",
       checksum: "835ca1f59716b30eb79a9674d7688bc0761a09ea1febde1eb31eb99c297bed91"
     ),
+    // apple/swift-protobuf, renamed SwiftProtobuf → ISSwiftProtobuf at the
+    // Mach-O/bundle level (see the instantsearch product comment above + Makefile
+    // postprocess). Placeholder until the next build-instantsearch.yml run
+    // (re-cut under a fresh tag) patches the url + checksum.
     .binaryTarget(
-      name: "SwiftProtobuf",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-7.27.0/SwiftProtobuf.xcframework.zip",
-      checksum: "c3b40af581c9aaf0efbb9b5c83e573be6406499ff540741009c0434dd2a809c7"
+      name: "ISSwiftProtobuf",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/instantsearch-PENDING/ISSwiftProtobuf.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )
