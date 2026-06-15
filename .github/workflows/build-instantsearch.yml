@@ -180,5 +180,6 @@ jobs:
           } > "$notes_file"
           gh release create "$tag" \
             build/artifacts/*.xcframework.zip \
+            --target "$GITHUB_SHA" \
             --title "$tag" \
             --notes-file "$notes_file"
