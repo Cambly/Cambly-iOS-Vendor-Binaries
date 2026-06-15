@@ -18,6 +18,10 @@ VENDOR ?=
 VERSION ?=
 BUILD_DIR := build
 ARTIFACTS_DIR := $(BUILD_DIR)/artifacts
+# SPM-mode vendors (USE_SPM=1) build via swift-create-xcframework instead of
+# `xcodebuild archive` on a committed xcodeproj. Override to point at a local
+# build; CI installs lonepalm's macOS-26 prebuilt binary to /usr/local/bin.
+SWIFT_CREATE_XCFRAMEWORK ?= swift-create-xcframework
 # Lazy `=` so `make clean` doesn't require VENDOR/VERSION at parse time.
 WORK_DIR = $(BUILD_DIR)/$(VENDOR)-$(VERSION)
 
@@ -184,6 +188,85 @@ ifeq ($(VENDOR),fastboard)
     "White_YYModel:White_YYModel"
 endif
 
+# InstantSearch — the ONLY SPM-mode vendor (USE_SPM=1). instantsearch-ios is a
+# pure-SwiftPM package with no committed framework-producing xcodeproj (only an
+# Examples app), so the `xcodebuild archive`-on-xcodeproj path used by every
+# other vendor doesn't apply. We build it with swift-create-xcframework instead
+# (unsignedapps/swift-create-xcframework; CI uses lonepalm's macOS-26 prebuilt
+# fork — the archived original can't compile against the macOS 26 SDK).
+#
+# Topology (verified): swift-create-xcframework builds EVERY target — including
+# transitive dependency packages — as a SEPARATE dynamic framework, and the
+# listed top-level frameworks dyld-link the rest at runtime (NOT statically
+# absorbed). `import InstantSearch` re-exports InstantSearchCore which re-exports
+# AlgoliaSearchClient (@_exported), and InstantSearchCore's public .swiftinterface
+# additionally `import`s InstantSearchInsights / InstantSearchTelemetry / Logging.
+# So all 7 modules must ship as embeddable, importable (evolution-enabled)
+# xcframeworks — same multi-framework model as the Netless stack.
+#
+# Two-stage build (a single `swift-create-xcframework` run can't emit all 7:
+# listing interdependent targets makes it archive each as its own scheme and
+# fail to resolve siblings — `unable to resolve module dependency: 'Logging'`):
+#   1. swift-create-xcframework builds the 3 top-level products with evolution
+#      and emits their xcframeworks directly. `--stack-evolution` (safe once
+#      swift-log is patched, see below) makes it build the whole dependency
+#      stack with library evolution too, so the archive it leaves behind
+#      contains all 7 frameworks each carrying a .swiftinterface.
+#   2. The other 4 (the transitive deps) are pulled out of that archive's
+#      Products/Library/Frameworks via `xcodebuild -create-xcframework`.
+#
+# swift-log patch: swift-log's `Logger.Storage.init` is `@inlinable`, which a
+# library-evolution build rejects ("must delegate to another initializer").
+# patch_swiftlog.py downgrades it to `@usableFromInline`. Run after `swift
+# package resolve` materializes the checkout, before the build.
+#
+# IPHONEOS_DEPLOYMENT_TARGET=17.0 (matches CamblyVendorBinaries' .iOS(.v17)) is
+# forced via --xc-setting (NOT --xcconfig, which silently no-ops) to keep every
+# generated target's deployment target consistent — otherwise dependency targets
+# get a different floor than the root and module imports fail across them.
+ifeq ($(VENDOR),instantsearch)
+  UPSTREAM_REPO_URL ?= git@github.com:algolia/instantsearch-ios.git
+  USE_SPM := 1
+  SPM_DEPLOYMENT_TARGET := 17.0
+  # Products swift-create-xcframework BUILDS with --stack-evolution. Building the
+  # top-level `InstantSearch` product leaves an archive containing the whole stack
+  # (all 7 frameworks, each with a .swiftinterface). We then create every shipped
+  # xcframework ourselves from that single archive (below), so the tool's own
+  # --output xcframeworks are discarded.
+  SPM_BUILD_PRODUCTS := InstantSearch InstantSearchCore AlgoliaSearchClient
+  # The vendored SwiftProtobuf framework: strip its Modules/ so it ships as a
+  # plain (non-importable) dynamic library. Why NOT rename it (MOB-338):
+  #   - instantsearch-telemetry pulls apple/swift-protobuf, and Cambly-Swift's
+  #     graph already has apple/swift-protobuf from source (Analytics-Tags @ 1.38).
+  #   - The ORIGINAL reason for renaming → ISSwiftProtobuf was a SwiftPM target-name
+  #     collision when InstantSearch was a CamblyVendorBinaries `.binaryTarget`.
+  #     That's gone: InstantSearch now ships as per-Xcode LOCAL frameworks
+  #     (LocalPackages/InstantSearchBinary, consumed via xcodegen `framework:`),
+  #     never entering any SwiftPM package graph — no target-name uniqueness check.
+  #   - The rename was done with `install_name_tool` (rename framework + repoint
+  #     every consumer's @rpath). On arm64 that left the modified Mach-O's code
+  #     pages mis-validating at runtime → `CODESIGNING Invalid Page` SIGKILL when
+  #     launched under the debugger (verified on sim). Dropping the rename removes
+  #     ALL install_name_tool surgery → no page corruption.
+  #   - Stripping Modules/ is still required so the consumer sees only ONE
+  #     importable `SwiftProtobuf` module (the app's source 1.38), not two.
+  # The duplicate-ObjC-class warning (two SwiftProtobuf dylibs at runtime) is
+  # unchanged by the rename either way (internal module name is `SwiftProtobuf`
+  # regardless) and is non-fatal.
+  SPM_PROTOBUF_STRIP_MODULES := SwiftProtobuf
+  # All 7 frameworks we ship (no rename; SwiftProtobuf keeps its name, Modules stripped).
+  SPM_SHIP_FRAMEWORKS := InstantSearch InstantSearchCore AlgoliaSearchClient InstantSearchInsights InstantSearchTelemetry Logging SwiftProtobuf
+  # Product names for sign / zip / checksum (via PRODUCTS_LIST).
+  SCHEME_PRODUCT_PAIRS := \
+    "InstantSearch:InstantSearch" \
+    "InstantSearchCore:InstantSearchCore" \
+    "AlgoliaSearchClient:AlgoliaSearchClient" \
+    "InstantSearchInsights:InstantSearchInsights" \
+    "InstantSearchTelemetry:InstantSearchTelemetry" \
+    "Logging:Logging" \
+    "SwiftProtobuf:SwiftProtobuf"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
 .PHONY: all clean clone pod-install build-xcframeworks sign-xcframeworks zip checksums require-args
@@ -198,7 +281,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit|fastboard) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit|fastboard|instantsearch) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 
@@ -233,6 +316,75 @@ PRODUCTS_LIST = $(shell printf '%s\n' $(SCHEME_PRODUCT_PAIRS) | tr -d '"' | awk 
 
 build-xcframeworks: clone pod-install
 	mkdir -p $(ARTIFACTS_DIR)
+ifeq ($(USE_SPM),1)
+	@echo "▶▶▶ SPM-mode vendor '$(VENDOR)': swift-create-xcframework builds the stack, then we strip $(SPM_PROTOBUF_STRIP_MODULES) Modules/ and package $(words $(SPM_SHIP_FRAMEWORKS)) frameworks from the archive"
+	@# Materialize SwiftPM checkouts via swift-create-xcframework's OWN resolver
+	@# (--list-products resolves + checks out without building) so the swift-log
+	@# version we patch is the SAME one the build uses. `swift package resolve`
+	@# (system SwiftPM) pins a newer swift-log than swift-create-xcframework's
+	@# bundled resolver, which the build step then re-resolves + overwrites —
+	@# discarding the patch. The build below reuses these checkouts and does not
+	@# re-clone, so the patch survives (verified MOB-338).
+	cd $(WORK_DIR) && $(SWIFT_CREATE_XCFRAMEWORK) --list-products
+	python3 $(CURDIR)/.github/scripts/patch_swiftlog.py \
+	  "$(WORK_DIR)/.build/checkouts/swift-log"
+	@echo "▶▶▶ Build [$(SPM_BUILD_PRODUCTS)] with library evolution (leaves a full-stack archive)"
+	@# --output goes to scratch: the tool's own xcframeworks are interface-only
+	@# (no binary .swiftmodule) and don't include the full 7-framework set, so we
+	@# discard them and build every shipped xcframework ourselves from the archive.
+	cd $(WORK_DIR) && $(SWIFT_CREATE_XCFRAMEWORK) \
+	  --platform ios \
+	  --stack-evolution \
+	  --xc-setting IPHONEOS_DEPLOYMENT_TARGET=$(SPM_DEPLOYMENT_TARGET) \
+	  --output $(CURDIR)/$(BUILD_DIR)/spm-scratch/ \
+	  $(SPM_BUILD_PRODUCTS)
+	@# Post-process + package. The top-level product's archive links the whole
+	@# stack, so its Frameworks/ dir holds all 7 frameworks (each with a
+	@# .swiftinterface from --stack-evolution). For each device/sim slice: strip
+	@# Modules/ from SwiftProtobuf.framework (so it's a non-importable plain dylib;
+	@# NO rename / NO install_name_tool — see the var block above). Then create one
+	@# xcframework per shipped framework from the slices.
+	@#
+	@# CRITICAL (MOB-338): `xcodebuild -create-xcframework` strips the binary
+	@# .swiftmodule, keeping only the .swiftinterface (the normal distribution
+	@# form, for compiler-version independence). But swift-create-xcframework emits
+	@# these interfaces with `-no-verify-emitted-module-interface`, so they are
+	@# NOT round-trippable: InstantSearchTelemetry's class==module-name self-refs
+	@# don't resolve, unavailable-type Sendable extensions fail, and — worst — the
+	@# entire `extension SearchParameters { ... }` (Query.hitsPerPage et al.) is
+	@# dropped. A consumer that recompiles from these interfaces breaks. Because
+	@# this is a PER-XCODE matrix (each slice's compiler === the consumer's Xcode),
+	@# we copy the COMPLETE binary .swiftmodule back into each xcframework slice
+	@# after create-xcframework; the consumer loads it directly and never touches
+	@# the broken interface. (SwiftProtobuf has no Modules/ — skipped.)
+	@primary="$(firstword $(SPM_BUILD_PRODUCTS))"; \
+	 archbase="$(WORK_DIR)/.build/swift-create-xcframework/build/$$primary"; \
+	 dev="$$archbase/iphoneos.xcarchive/Products/Library/Frameworks"; \
+	 sim="$$archbase/iphonesimulator.xcarchive/Products/Library/Frameworks"; \
+	 for slice in "$$dev" "$$sim"; do \
+	   echo "🔧 Stripping Modules/ from $(SPM_PROTOBUF_STRIP_MODULES).framework in $$slice (no rename — see MOB-338)"; \
+	   python3 $(CURDIR)/.github/scripts/postprocess_instantsearch.py \
+	     "$$slice" $(SPM_PROTOBUF_STRIP_MODULES) || exit 1; \
+	 done; \
+	 for m in $(SPM_SHIP_FRAMEWORKS); do \
+	   echo "📦 Creating $$m.xcframework from post-processed archive"; \
+	   if [ ! -d "$$dev/$$m.framework" ] || [ ! -d "$$sim/$$m.framework" ]; then \
+	     echo "❌ $$m.framework missing in archive"; echo "device:"; ls "$$dev"; echo "sim:"; ls "$$sim"; exit 1; \
+	   fi; \
+	   rm -rf $(ARTIFACTS_DIR)/$$m.xcframework; \
+	   xcodebuild -create-xcframework \
+	     -framework "$$dev/$$m.framework" \
+	     -framework "$$sim/$$m.framework" \
+	     -output $(ARTIFACTS_DIR)/$$m.xcframework || exit 1; \
+	   for slicedir in $(ARTIFACTS_DIR)/$$m.xcframework/*/; do \
+	     dstmod="$$slicedir$$m.framework/Modules/$$m.swiftmodule"; \
+	     [ -d "$$dstmod" ] || continue; \
+	     case "$$slicedir" in *simulator*) srcmod="$$sim/$$m.framework/Modules/$$m.swiftmodule";; *) srcmod="$$dev/$$m.framework/Modules/$$m.swiftmodule";; esac; \
+	     for bm in "$$srcmod"/*.swiftmodule; do [ -e "$$bm" ] && cp "$$bm" "$$dstmod/"; done; \
+	     echo "  ↳ kept binary .swiftmodule in $$m/$$(basename $$slicedir)"; \
+	   done; \
+	 done
+else
 	@# Loop over scheme:product pairs. Quoted Make tokens like "Alamofire iOS:Alamofire"
 	@# survive shell word-splitting because the surrounding double-quotes are still
 	@# present in the substituted text; `for pair in ...` then treats each quoted
@@ -302,6 +454,7 @@ build-xcframeworks: clone pod-install
 	    -framework $$sim_fwk \
 	    -output $(ARTIFACTS_DIR)/$$product.xcframework || exit 1; \
 	done
+endif
 
 # Sign each .xcframework with the team's Apple Distribution identity before
 # zipping. Required by Apple for SDKs on the "commonly used third-party SDK"

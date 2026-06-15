@@ -1,0 +1,184 @@
+name: Build InstantSearch
+
+# Manual trigger only. To cut a new InstantSearch release:
+#   Actions → Build InstantSearch → Run workflow → (set version) → Run.
+#
+# PER-XCODE MATRIX (MOB-338). InstantSearch ships library-evolution
+# xcframeworks, and a library-evolution `.swiftinterface` is NOT reliably
+# stable across Swift compiler versions: a generic open class like
+# `HitsInteractor<Record>` re-typechecked by a different compiler than the one
+# that emitted it fails to build. (The Cambly-Swift consumer specializes it as
+# `HitsInteractor<TutorSearchResult>` in Shared/Search/BaseSearcher.swift.) So
+# unlike a single-slice vendor, we build ONE set of 7 xcframeworks PER Xcode
+# version the fleet uses, exactly like Realm ships RealmSwift@<xcode>.spm.zip.
+#
+# Each matrix leg selects its Xcode via `xcode-select` and publishes its 7
+# xcframework zips to a per-Xcode release tag:
+#   instantsearch-<version><tag_suffix>-xcode<xcode>
+# (e.g. instantsearch-7.27.0-r3-xcode26.5). The 7 zips:
+#   InstantSearch + InstantSearchCore + AlgoliaSearchClient +
+#   InstantSearchInsights + InstantSearchTelemetry + Logging + SwiftProtobuf.
+#
+# The consumer (Cambly-Swift) does NOT use the CamblyVendorBinaries Package.swift
+# binaryTarget(url:) mechanism for InstantSearch (that can only encode one url,
+# so it can't pick by Xcode). Instead it mirrors Realm: an in-repo
+# LocalPackages/InstantSearchBinary/instantsearch-binaries.json keyed by Xcode +
+# a render script that downloads the slice matching the active Xcode. This
+# workflow therefore does NOT patch Package.swift or push to main; it only
+# publishes per-Xcode release assets. Each leg prints a ready-to-paste json
+# fragment for that Xcode into its release notes.
+#
+# Why macos-26: it is the only GitHub-hosted image that carries every fleet
+# Xcode (26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5). macos-15 tops out at 26.3 —
+# building there is what silently produced a 6.2.4 binary that an Xcode-26.5
+# consumer couldn't link (the original blocker).
+#
+# SPM-mode build (USE_SPM=1 in the Makefile): instantsearch-ios is pure SwiftPM
+# with no framework-producing xcodeproj, so the Makefile builds it via
+# unsignedapps/swift-create-xcframework. We install lonepalm's prebuilt fork
+# (the archived upstream binary can't compile against the macOS 26 SDK — same
+# install path the earlier Google-auth attempt used). lonepalm is only a driver:
+# it shells out to the selected `xcode-select` toolchain, so per-leg xcode-select
+# is what makes each slice come out for a different compiler.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream tag on algolia/instantsearch-ios (e.g. 7.27.0)"
+        required: true
+        type: string
+        default: 7.27.0
+      tag_suffix:
+        description: "Optional suffix appended BEFORE the -xcode<ver> part of each release tag, e.g. -r3. Used when republishing the same upstream version. Leave empty for the first release of a given upstream version."
+        required: false
+        type: string
+        default: ""
+      tool_ref:
+        description: "lonepalm/swift-create-xcframework git ref (branch or commit) — the macOS-26 prebuilt fork."
+        required: true
+        type: string
+        default: "master"
+
+permissions:
+  contents: write
+
+# No concurrency group: each matrix leg publishes its own per-Xcode tag and
+# nothing pushes to main, so legs can't race each other. (A single shared
+# cancel-in-progress group would cancel sibling legs — exactly what we must NOT
+# do here.)
+
+jobs:
+  build:
+    runs-on: macos-26
+    strategy:
+      # Don't let one Xcode's failure cancel the others — we want to see which
+      # slices succeed, and a partial set is still publishable.
+      fail-fast: false
+      matrix:
+        # Every Xcode the fleet uses. Keep in sync with the keys in
+        # Cambly-Swift's LocalPackages/InstantSearchBinary/instantsearch-binaries.json.
+        # Values must match the /Applications/Xcode_<value>.app names on the
+        # macos-26 image.
+        #
+        # 26.1.1 is intentionally NOT here: macos-26 ships the Xcode 26.1.1 app
+        # but WITHOUT its iOS device SDK component (GitHub trims older Xcodes'
+        # platform SDKs), so `xcodebuild -destination generic/platform=iOS` fails
+        # with "iOS 26.1 is not installed". The fleet floor is 26.2 (pin history
+        # is 26.4.1 → 26.5), so dropping it is safe. If a 26.1.x slice is ever
+        # needed, add a `sudo xcodebuild -downloadPlatform iOS` step for that leg.
+        xcode: ["26.2", "26.3", "26.4.1", "26.5"]
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ matrix.xcode }}
+        run: |
+          XCODE="/Applications/Xcode_${{ matrix.xcode }}.app"
+          if [ ! -d "$XCODE" ]; then
+            echo "❌ $XCODE is not installed on this runner."
+            echo "   Installed Xcodes:"; ls -d /Applications/Xcode_*.app 2>/dev/null || true
+            echo "   If the runner image dropped this version, update the matrix"
+            echo "   (and Cambly-Swift's instantsearch-binaries.json) accordingly."
+            exit 1
+          fi
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Install swift-create-xcframework (lonepalm prebuilt macOS-26 binary)
+        # unsignedapps/swift-create-xcframework@v2.3.0 is archived and its
+        # transitive dep swift-llbuild can't compile against the macOS 26 SDK.
+        # lonepalm/swift-create-xcframework commits a prebuilt binary patched
+        # for macOS 26 at the repo root — clone + install. (See the reverted
+        # build-google-auth.yml in git history for the original context.)
+        # The prebuilt binary is a driver that calls the SELECTED xcodebuild, so
+        # it produces a slice for whichever Xcode this leg selected above.
+        run: |
+          git clone --depth 1 --branch "${{ inputs.tool_ref }}" \
+            https://github.com/lonepalm/swift-create-xcframework.git /tmp/sc-xcf
+          test -f /tmp/sc-xcf/swift-create-xcframework || { echo "❌ prebuilt binary not at repo root"; ls /tmp/sc-xcf; exit 1; }
+          sudo install -m 755 /tmp/sc-xcf/swift-create-xcframework /usr/local/bin/swift-create-xcframework
+          swift-create-xcframework --help | head -n 3 || true
+
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      - name: Build + sign InstantSearch xcframeworks via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          make all VENDOR=instantsearch VERSION=${{ inputs.version }} \
+            UPSTREAM_REPO_URL=https://github.com/algolia/instantsearch-ios.git
+
+      - name: Emit per-Xcode json fragment for the consumer
+        id: fragment
+        # Computes each zip's sha256 and prints a ready-to-paste block for
+        # Cambly-Swift's instantsearch-binaries.json `per_xcode."<xcode>"` key.
+        # The consumer downloads from the per-Xcode tag's asset urls below.
+        run: |
+          tag="instantsearch-${{ inputs.version }}${{ inputs.tag_suffix }}-xcode${{ matrix.xcode }}"
+          base="https://github.com/${{ github.repository }}/releases/download/${tag}"
+          frag="build/artifacts/fragment-${{ matrix.xcode }}.json"
+          # Build the block to a variable first (no `cd` inside a pipe — the tee
+          # process runs in the original cwd, which previously broke the path).
+          # Glob full paths so basename strips the dir; write frag at repo root.
+          {
+            echo "    \"${{ matrix.xcode }}\": {"
+            first=1
+            for f in build/artifacts/*.xcframework.zip; do
+              name=$(basename "$f" .xcframework.zip)
+              sha=$(swift package compute-checksum "$f")
+              [ $first -eq 1 ] && first=0 || echo ","
+              printf '      "%s": { "url": "%s/%s.xcframework.zip", "checksum": "%s" }' \
+                "$name" "$base" "$name" "$sha"
+            done
+            echo ""
+            echo "    }"
+          } | tee "$frag"
+          echo "frag_path=${frag}" >> "$GITHUB_OUTPUT"
+
+      - name: Create per-Xcode GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="instantsearch-${{ inputs.version }}${{ inputs.tag_suffix }}-xcode${{ matrix.xcode }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          notes_file=$(mktemp)
+          {
+            echo "Prebuilt xcframeworks for algolia/instantsearch-ios@${{ inputs.version }} built with **Xcode ${{ matrix.xcode }}**."
+            echo ""
+            echo "7 frameworks: InstantSearch / InstantSearchCore / AlgoliaSearchClient / InstantSearchInsights / InstantSearchTelemetry / Logging / SwiftProtobuf. All must be embedded by each consuming app target. Built SPM-mode via lonepalm/swift-create-xcframework@${{ inputs.tool_ref }} with library evolution (swift-log patched, see .github/scripts/patch_swiftlog.py; vendored SwiftProtobuf shipped as a Modules-stripped plain dylib — see .github/scripts/postprocess_instantsearch.py). Each framework ships its binary .swiftmodule (per-Xcode), so consumers load it directly instead of recompiling the .swiftinterface."
+            echo ""
+            echo "Paste this block into Cambly-Swift's \`LocalPackages/InstantSearchBinary/instantsearch-binaries.json\` under \`per_xcode\`:"
+            echo ""
+            echo '```json'
+            cat "${{ steps.fragment.outputs.frag_path }}"
+            echo '```'
+          } > "$notes_file"
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes-file "$notes_file"
