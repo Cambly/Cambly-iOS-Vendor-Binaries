@@ -344,58 +344,58 @@ let package = Package(
     // (mirrors Cambly-Swift's known-good Package.resolved).
     .binaryTarget(
       name: "ZendeskSDKMessaging",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKMessaging.xcframework.zip",
+      checksum: "b3f1c4a51a8e62b777c53fc70b882d4852705d78eb2700c89dd9e595b1be03fb"
     ),
     .binaryTarget(
       name: "ZendeskSDK",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDK.xcframework.zip",
+      checksum: "8c512e3d11823084ef691d7c245dda61e5c9094f34f12df234c5131cc37a5387"
     ),
     .binaryTarget(
       name: "ZendeskSDKUIComponents",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKUIComponents.xcframework.zip",
+      checksum: "c01a759ed6e77c676e0a84a1812db0b2f09c88bca3d45fbca61a242f69c75d47"
     ),
     .binaryTarget(
       name: "ZendeskSDKConversationKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKConversationKit.xcframework.zip",
+      checksum: "bd1053889737c0c58affd81e3cc13b8b5a704390050f94f4d139df2b3aa73b57"
     ),
     .binaryTarget(
       name: "ZendeskSDKGuideKit",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKGuideKit.xcframework.zip",
+      checksum: "a9cc5c622465ddb7cd5b02f639a93894e9b434012a64e55b751386e2799ce8ef"
     ),
     .binaryTarget(
       name: "ZendeskSDKHTTPClient",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKHTTPClient.xcframework.zip",
+      checksum: "e257bda2dfaf06eae9b04a0684515bb9a8c1a27f264ba7261907bd4e79b5320d"
     ),
     .binaryTarget(
       name: "ZendeskSDKStorage",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKStorage.xcframework.zip",
+      checksum: "67fefda0cfe54a5bb8e9ba6a3b17c5e7c34bd2d0ccd083281a6ed14dc3380037"
     ),
     .binaryTarget(
       name: "ZendeskSDKFayeClient",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKFayeClient.xcframework.zip",
+      checksum: "d38f985348ef14a801089a9f2f38a6744d25f7014aff6cba3195ba59c2b7cd54"
     ),
     .binaryTarget(
       name: "ZendeskSDKSocketClient",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKSocketClient.xcframework.zip",
+      checksum: "a118ba11a7d7f73709277a0faadc5dcd4f4b7388117b4ca5fcd3331c7a2fe2c1"
     ),
     .binaryTarget(
       name: "ZendeskSDKCoreUtilities",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKCoreUtilities.xcframework.zip",
+      checksum: "182eeae2a64d6317f14e366e33329328ccd6d015c5f5a770b12a84d18fb02241"
     ),
     .binaryTarget(
       name: "ZendeskSDKLogger",
-      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
-      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-2.35.0-signed/ZendeskSDKLogger.xcframework.zip",
+      checksum: "09248e9a3d071507dca502184bf20d43a2df90b3acaa714d38491c09ebeea45e"
     ),
   ]
 )
