@@ -267,6 +267,56 @@ ifeq ($(VENDOR),instantsearch)
     "SwiftProtobuf:SwiftProtobuf"
 endif
 
+# Zendesk — the ONLY prebuilt-xcframework vendor (USE_PREBUILT=1). Every other
+# vendor builds from source (xcodeproj / CocoaPods / SPM); Zendesk does NOT ship
+# source — each zendesk/sdk_*_ios SPM package is a `path:` binaryTarget over a
+# committed <Module>.xcframework. So there is nothing to archive: we clone each
+# sub-repo at its pinned tag, lift the prebuilt .xcframework from the repo root,
+# and re-sign it under Cambly's identity (the sign / zip / checksum tail is the
+# same shared path as every other vendor — see sign-xcframeworks below).
+#
+# The 11 sub-frameworks are one matched ABI set (the messaging 2.35.0 train).
+# Vendoring them behind ONE Cambly-iOS-Vendor-Binaries revision is exactly what
+# prevents the partial-float skew that crashed Cambly-Swift develop when a loose
+# `from:`-range SwiftPM resolve bumped ui_components alone (MOB-363 / postmortem).
+# The pin set mirrors Cambly-Swift's known-good Package.resolved.
+ifeq ($(VENDOR),zendesk)
+  USE_PREBUILT := 1
+  # Public upstreams; clone over https (no SSH key on macos runners).
+  ZENDESK_BASE ?= https://github.com/zendesk
+  # "<repo>:<upstream-tag>:<FrameworkName>" — clone each, lift
+  # <FrameworkName>.xcframework from the repo root (the package's `path:`
+  # binaryTarget). NOTE: these are the per-sub-package upstream tags, independent
+  # of the vendor-release VERSION (which only names this repo's release tag).
+  PREBUILT_REPO_TAGS := \
+    "sdk_messaging_ios:2.35.0:ZendeskSDKMessaging" \
+    "sdk_zendesk_ios:3.15.0:ZendeskSDK" \
+    "sdk_ui_components_ios:14.3.1:ZendeskSDKUIComponents" \
+    "sdk_conversation_kit_ios:13.2.0:ZendeskSDKConversationKit" \
+    "sdk_guide_kit_ios:2.8.0:ZendeskSDKGuideKit" \
+    "sdk_http_client_ios:0.20.1:ZendeskSDKHTTPClient" \
+    "sdk_storage_ios:1.5.0:ZendeskSDKStorage" \
+    "sdk_faye_client_ios:1.16.0:ZendeskSDKFayeClient" \
+    "sdk_socket_client_ios:1.14.0:ZendeskSDKSocketClient" \
+    "sdk_core_utilities_ios:7.2.0:ZendeskSDKCoreUtilities" \
+    "sdk_logger_ios:0.11.0:ZendeskSDKLogger"
+  # All shipped framework names → PRODUCTS_LIST (sign / zip / checksum). The
+  # leading "x:" is a dummy scheme so the shared `awk -F: '{print $$2}'`
+  # extraction yields the framework name (prebuilt mode has no real schemes).
+  SCHEME_PRODUCT_PAIRS := \
+    "x:ZendeskSDKMessaging" \
+    "x:ZendeskSDK" \
+    "x:ZendeskSDKUIComponents" \
+    "x:ZendeskSDKConversationKit" \
+    "x:ZendeskSDKGuideKit" \
+    "x:ZendeskSDKHTTPClient" \
+    "x:ZendeskSDKStorage" \
+    "x:ZendeskSDKFayeClient" \
+    "x:ZendeskSDKSocketClient" \
+    "x:ZendeskSDKCoreUtilities" \
+    "x:ZendeskSDKLogger"
+endif
+
 # ─── Targets ────────────────────────────────────────────────────────────────
 
 .PHONY: all clean clone pod-install build-xcframeworks sign-xcframeworks zip checksums require-args
@@ -281,7 +331,7 @@ require-args:
 	@# word-splitting), and re-quoting it tears the value apart. Validate VENDOR
 	@# against the known list of ifeq blocks instead.
 	@case "$(VENDOR)" in \
-	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit|fastboard|instantsearch) : ;; \
+	  facebook|alamofire|lottie|keychainaccess|devicekit|sdwebimage|sentry|posthog|iterable|starscream|rxswift|promisekit|fastboard|instantsearch|zendesk) : ;; \
 	  *) echo "❌ Unknown VENDOR='$(VENDOR)' — add an ifeq block in Makefile"; exit 1 ;; \
 	esac
 
@@ -290,7 +340,11 @@ clean:
 
 clone: require-args
 	mkdir -p $(BUILD_DIR)
-	test -d $(WORK_DIR) || git clone --depth 1 --branch $(VERSION) $(UPSTREAM_REPO_URL) $(WORK_DIR)
+	@if [ -n "$(USE_PREBUILT)" ]; then \
+	  echo "▶▶▶ prebuilt vendor '$(VENDOR)': per-repo clones happen in build-xcframeworks; skipping single-repo clone"; \
+	else \
+	  test -d $(WORK_DIR) || git clone --depth 1 --branch $(VERSION) $(UPSTREAM_REPO_URL) $(WORK_DIR); \
+	fi
 
 # CocoaPods-mode vendors (USE_COCOAPODS=1) build from a `pod install`-generated
 # workspace rather than a committed xcodeproj. Patch the Podfile to pin the
@@ -384,6 +438,28 @@ ifeq ($(USE_SPM),1)
 	     echo "  ↳ kept binary .swiftmodule in $$m/$$(basename $$slicedir)"; \
 	   done; \
 	 done
+else ifeq ($(USE_PREBUILT),1)
+	@echo "▶▶▶ prebuilt-mode vendor '$(VENDOR)': lift committed .xcframeworks from $(words $(PREBUILT_REPO_TAGS)) pinned sub-repos (no source build)"
+	@# Clone each zendesk sub-repo at its pinned tag and copy the prebuilt
+	@# <Framework>.xcframework (the package's `path:` binaryTarget) out of the
+	@# repo root into ARTIFACTS_DIR. The shared sign-xcframeworks step then
+	@# re-signs each one under Cambly's identity; zip + checksums follow.
+	@srcroot="$(BUILD_DIR)/$(VENDOR)-src"; rm -rf "$$srcroot"; mkdir -p "$$srcroot"; \
+	for triple in $(PREBUILT_REPO_TAGS); do \
+	  t=$$(printf '%s' "$$triple" | tr -d '"'); \
+	  repo=$$(printf '%s' "$$t" | cut -d: -f1); \
+	  tag=$$(printf '%s' "$$t" | cut -d: -f2); \
+	  fwk=$$(printf '%s' "$$t" | cut -d: -f3); \
+	  dest="$$srcroot/$$repo"; \
+	  echo ""; echo "▶▶▶ $$repo @ $$tag → $$fwk.xcframework"; \
+	  git clone --depth 1 --branch "$$tag" "$(ZENDESK_BASE)/$$repo.git" "$$dest" || exit 1; \
+	  ( cd "$$dest" && git lfs pull 2>/dev/null || true ); \
+	  src="$$dest/$$fwk.xcframework"; \
+	  test -f "$$src/Info.plist" || { echo "❌ $$fwk.xcframework/Info.plist missing at root of $$repo@$$tag (Git LFS not materialized?)"; ls -la "$$dest"; exit 1; }; \
+	  rm -rf "$(ARTIFACTS_DIR)/$$fwk.xcframework"; \
+	  cp -R "$$src" "$(ARTIFACTS_DIR)/$$fwk.xcframework" || exit 1; \
+	  echo "  ✓ staged $$fwk.xcframework"; \
+	done
 else
 	@# Loop over scheme:product pairs. Quoted Make tokens like "Alamofire iOS:Alamofire"
 	@# survive shell word-splitting because the surrounding double-quotes are still
