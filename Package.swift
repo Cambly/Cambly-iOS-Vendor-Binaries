@@ -160,6 +160,36 @@ let package = Package(
       name: "Whiteboard",
       targets: ["Whiteboard", "NTLBridge", "White_YYModel"]
     ),
+    // === zendesk ===
+    // Zendesk Messaging SDK — the only PREBUILT-xcframework vendor. Upstream
+    // ships no source: each zendesk/sdk_*_ios SPM package is itself a `path:`
+    // binaryTarget over a committed <Module>.xcframework. We re-host + re-sign
+    // the matched set (the messaging 2.35.0 train) behind ONE revision so it
+    // can't partially drift the way a loose-range SwiftPM resolve did on
+    // Cambly-Swift develop (MOB-363 / the Zendesk ABI-skew postmortem).
+    //
+    // ZendeskSDKMessaging dyld-links the whole family at runtime (the
+    // sub-frameworks are separate dynamic frameworks, NOT statically absorbed),
+    // so this single product lists all 11 frameworks — SwiftPM then embeds every
+    // one into the consuming app target (same multi-framework model as Fastboard
+    // / InstantSearch). Cambly-Swift imports `ZendeskSDKMessaging` AND
+    // `ZendeskSDK`; both modules resolve through this one product.
+    .library(
+      name: "ZendeskSDKMessaging",
+      targets: [
+        "ZendeskSDKMessaging",
+        "ZendeskSDK",
+        "ZendeskSDKUIComponents",
+        "ZendeskSDKConversationKit",
+        "ZendeskSDKGuideKit",
+        "ZendeskSDKHTTPClient",
+        "ZendeskSDKStorage",
+        "ZendeskSDKFayeClient",
+        "ZendeskSDKSocketClient",
+        "ZendeskSDKCoreUtilities",
+        "ZendeskSDKLogger",
+      ]
+    ),
   ],
   targets: [
     // === facebook ===
@@ -303,6 +333,69 @@ let package = Package(
       name: "White_YYModel",
       url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/fastboard-1.4.1-r2/White_YYModel.xcframework.zip",
       checksum: "505993b6e2fbbddc3d1b4f2ec4e9029cb2049efcd0336b9c6c5f8eaf23caf92a"
+    ),
+    // === zendesk ===
+    // Source: zendesk/sdk_*_ios — each repo commits a prebuilt
+    // <Module>.xcframework as its SPM `path:` binaryTarget. build-zendesk.yml
+    // lifts each one (Makefile VENDOR=zendesk, USE_PREBUILT), re-signs under
+    // Cambly's Apple Distribution identity, uploads it as a release asset, and
+    // patches the url + checksum below. Placeholder (PENDING / 64 zeros) until
+    // the first workflow run. Versions = the messaging 2.35.0 matched train
+    // (mirrors Cambly-Swift's known-good Package.resolved).
+    .binaryTarget(
+      name: "ZendeskSDKMessaging",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDK",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKUIComponents",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKConversationKit",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKGuideKit",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKHTTPClient",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKStorage",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKFayeClient",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKSocketClient",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKCoreUtilities",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
+    ),
+    .binaryTarget(
+      name: "ZendeskSDKLogger",
+      url: "https://github.com/Cambly/Cambly-iOS-Vendor-Binaries/releases/download/zendesk-PENDING/PENDING.xcframework.zip",
+      checksum: "0000000000000000000000000000000000000000000000000000000000000000"
     ),
   ]
 )

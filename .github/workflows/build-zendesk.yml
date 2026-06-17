@@ -1,0 +1,138 @@
+name: Build Zendesk
+
+# Manual trigger only. To cut a new Zendesk release:
+#   Actions → Build Zendesk → Run workflow → (set version) → Run.
+#
+# Unlike every other vendor, Zendesk ships NO source — each zendesk/sdk_*_ios
+# SPM package is a `path:` binaryTarget over a committed <Module>.xcframework.
+# So `make VENDOR=zendesk` (USE_PREBUILT) clones each sub-repo at its pinned tag
+# (the messaging 2.35.0 matched train, set in the Makefile's PREBUILT_REPO_TAGS),
+# lifts the prebuilt .xcframework, and re-signs it under Cambly's identity.
+#
+# Produces a GitHub Release tagged `zendesk-<version>` containing all 11
+# xcframework zips, then patches Package.swift's `// === zendesk ===` section
+# with the new urls + checksums and commits it to main.
+#
+# `version` is just the human-facing release name (we use the messaging
+# version). The actual per-sub-package upstream tags live in the Makefile, NOT
+# here — bump them there when upgrading the matched set.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release name for this Zendesk set (we use the messaging version, e.g. 2.35.0). Per-sub-package tags are pinned in the Makefile."
+        required: true
+        type: string
+        default: "2.35.0"
+      tag_suffix:
+        description: "Optional suffix appended to the release tag, e.g. -signed or -r2. Used when republishing the same version. Leave empty for the first release."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+# Serialize across all build-*.yml so two concurrent runs don't race on
+# `git push origin main` while patching Package.swift.
+concurrency:
+  group: package-update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Checkout binary repo (this)
+        uses: actions/checkout@v4
+
+      - name: Select Xcode (prefer 26.x, fall back to latest installed)
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$XCODE" ]; then
+            XCODE=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "❌ No Xcode found in /Applications/"; ls /Applications | grep -i xcode || true; exit 1
+          fi
+          echo "Selecting: $XCODE"
+          sudo xcode-select -s "$XCODE"
+          xcodebuild -version
+
+      - name: Set up signing
+        uses: ./.github/actions/setup-signing
+        with:
+          ssh-private-key: ${{ secrets.MATCH_GIT_SSH_PRIVATE_KEY }}
+          match-password: ${{ secrets.MATCH_PASSWORD }}
+
+      # Lift + re-sign all 11 prebuilt Zendesk xcframeworks. No UPSTREAM_REPO_URL:
+      # USE_PREBUILT clones each sub-repo itself (ZENDESK_BASE default = https).
+      # Requires git-lfs (preinstalled on macos-15) in case the upstream repos
+      # store their .xcframeworks via LFS.
+      - name: Lift + sign Zendesk xcframeworks via Makefile
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+        run: |
+          git lfs install
+          make all VENDOR=zendesk VERSION=${{ inputs.version }}
+
+      - name: Compute checksums
+        id: checksums
+        run: |
+          cd build/artifacts
+          {
+            for f in *.xcframework.zip; do
+              name="${f%.xcframework.zip}"
+              sha=$(swift package compute-checksum "$f")
+              echo "${name}_sha=${sha}"
+            done
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Patch Package.swift
+        env:
+          VENDOR: zendesk
+          ASSETS_TAG: zendesk-${{ inputs.version }}${{ inputs.tag_suffix }}
+          ZendeskSDKMessaging_SHA: ${{ steps.checksums.outputs.ZendeskSDKMessaging_sha }}
+          ZendeskSDK_SHA: ${{ steps.checksums.outputs.ZendeskSDK_sha }}
+          ZendeskSDKUIComponents_SHA: ${{ steps.checksums.outputs.ZendeskSDKUIComponents_sha }}
+          ZendeskSDKConversationKit_SHA: ${{ steps.checksums.outputs.ZendeskSDKConversationKit_sha }}
+          ZendeskSDKGuideKit_SHA: ${{ steps.checksums.outputs.ZendeskSDKGuideKit_sha }}
+          ZendeskSDKHTTPClient_SHA: ${{ steps.checksums.outputs.ZendeskSDKHTTPClient_sha }}
+          ZendeskSDKStorage_SHA: ${{ steps.checksums.outputs.ZendeskSDKStorage_sha }}
+          ZendeskSDKFayeClient_SHA: ${{ steps.checksums.outputs.ZendeskSDKFayeClient_sha }}
+          ZendeskSDKSocketClient_SHA: ${{ steps.checksums.outputs.ZendeskSDKSocketClient_sha }}
+          ZendeskSDKCoreUtilities_SHA: ${{ steps.checksums.outputs.ZendeskSDKCoreUtilities_sha }}
+          ZendeskSDKLogger_SHA: ${{ steps.checksums.outputs.ZendeskSDKLogger_sha }}
+        run: python3 .github/scripts/patch_package_swift.py
+
+      # Race protection: actions/checkout pins to trigger-time SHA, so rebase
+      # onto current origin/main before push to handle concurrent vendor builds.
+      - name: Commit Package.swift update + push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Package.swift
+          git diff --staged --quiet && { echo "No Package.swift changes; nothing to commit"; exit 0; }
+          git commit -m "Update Zendesk binaries to ${{ inputs.version }}"
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main || { echo "❌ rebase conflict on attempt $attempt"; git rebase --abort; exit 1; }
+            if git push origin HEAD:main; then
+              echo "✓ pushed on attempt $attempt"; exit 0
+            fi
+            echo "push rejected; retrying after rebase (attempt $attempt/3)"
+            sleep 5
+          done
+          echo "❌ push failed after 3 attempts"; exit 1
+
+      - name: Create GitHub release with assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="zendesk-${{ inputs.version }}${{ inputs.tag_suffix }}"
+          gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$tag" \
+            build/artifacts/*.xcframework.zip \
+            --title "$tag" \
+            --notes "Prebuilt Zendesk Messaging SDK xcframeworks (messaging ${{ inputs.version }} matched train), lifted from the zendesk/sdk_*_ios SPM packages' committed binaryTargets and re-signed under Cambly's Apple Distribution identity. Per-sub-package tags are pinned in Makefile PREBUILT_REPO_TAGS."
