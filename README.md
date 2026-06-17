@@ -30,6 +30,7 @@ Versions tracked:
 | `Starscream` | `daltoniam/Starscream@4.0.8` | `starscream-4.0.8` | `Starscream` scheme in `Starscream.xcodeproj` |
 | `FastboardSDK` + `Whiteboard` + `NTLBridge` + `White_YYModel` (the Netless stack) | `netless-io/fastboard-iOS@1.4.1` (+ transitive `Whiteboard-iOS@2.16.89`, `DSBridge-IOS`, `White_YYModel`) | `fastboard-1.4.1-r2` | **CocoaPods-mode** — `Fastboard` / `Whiteboard` / `NTLBridge` / `White_YYModel` schemes in `pod install`-generated `Example/Fastboard.xcworkspace`. Fastboard's module is renamed to `FastboardSDK` (the `.library` product stays `Fastboard`). See "CocoaPods-mode vendors" below. |
 | `InstantSearch` + `InstantSearchCore` + `AlgoliaSearchClient` + `InstantSearchInsights` + `InstantSearchTelemetry` + `Logging` + `SwiftProtobuf` (7 frameworks) | `algolia/instantsearch-ios@7.27.0` (+ transitive `algoliasearch-client-swift`, `instantsearch-telemetry-native`, `apple/swift-log`, `apple/swift-protobuf`) | `instantsearch-7.27.0-xcode<XV>` — **one release per fleet Xcode** (`26.2` / `26.3` / `26.4.1` / `26.5`) | **SPM-mode, per-Xcode** — `swift-create-xcframework`; 7 dynamic frameworks each shipping its **binary `.swiftmodule`**. NOT in this `Package.swift` — consumed by Cambly-Swift as **local per-Xcode frameworks** (`LocalPackages/InstantSearchBinary`), same model as Realm. See "SPM-mode vendor" below. |
+| `ZendeskSDKMessaging` (+ `ZendeskSDK` + 9 more — 11 frameworks) | `zendesk/sdk_messaging_ios@2.35.0` (+ 10 transitive `sdk_*_ios`, the messaging 2.35.0 matched train) | `zendesk-2.35.0-signed` | **Prebuilt-mode** — upstream ships no source; each `sdk_*_ios` SPM package is itself a `path:` binaryTarget over a committed `.xcframework`, which we lift + re-sign. See "Prebuilt-mode vendor" below. |
 
 Cambly-Swift pins this repo by `revision: <vendor>-<version>` (typically the most recently bumped vendor's tag — the commit at that tag carries all vendors' current URLs/checksums, since each workflow patches the shared `Package.swift`).
 
@@ -56,6 +57,18 @@ Every vendor above builds from a **committed standalone xcodeproj** at its upstr
 - **Two-stage build.** A single `swift-create-xcframework` run can't emit all 7: listing interdependent targets makes it archive each as its own scheme and fail to resolve siblings (`unable to resolve module dependency: 'Logging'`). So the Makefile (1) builds the 3 top-level products (`InstantSearch` / `InstantSearchCore` / `AlgoliaSearchClient`) with `--stack-evolution`, which also builds the whole dependency stack with library evolution, leaving an archive where all 7 frameworks carry a `.swiftinterface`; then (2) repackages the other 4 from that archive's `Products/Library/Frameworks` via `xcodebuild -create-xcframework`. The 4 deps need real interfaces (not just stripping) because `InstantSearchCore`'s public `.swiftinterface` `import`s `InstantSearchInsights` / `InstantSearchTelemetry` / `Logging`.
 - **swift-log patch.** swift-log's `Logger.Storage.init` is `@inlinable`, which a library-evolution build rejects (`initializer ... is '@inlinable' and must delegate to another initializer`). `.github/scripts/patch_swiftlog.py` downgrades it to `@usableFromInline` (no behavior change). It runs after `swift-create-xcframework --list-products` materializes the checkouts — using that tool's **own** (older) resolver, not `swift package resolve`, because the system SwiftPM pins a newer swift-log that the build step would then re-resolve + overwrite, discarding the patch. swift-protobuf builds under evolution unchanged. The patch finds the file by content (the initializer moved `Logging.swift` → `Logger.swift` across versions) and fails loudly if the pattern drifts.
 - **Deployment target.** `--xc-setting IPHONEOS_DEPLOYMENT_TARGET=17.0` (matches this repo's `.iOS(.v17)`) is forced via `--xc-setting`, **not** `--xcconfig` (which silently no-ops — same finding as the Google-auth iterations). Without a uniform floor, dependency targets get a different deployment target than the root and module imports fail across them.
+
+### Prebuilt-mode vendor (Zendesk)
+
+Zendesk is the one **prebuilt-mode** vendor (`USE_PREBUILT=1` in the Makefile). Unlike every other vendor, Zendesk ships **no source at all**: each `zendesk/sdk_*_ios` SwiftPM package is itself a `path:` `binaryTarget` over a `<Module>.xcframework` committed in that repo. There is nothing to `xcodebuild archive` or `swift-create-xcframework` — so `build-zendesk.yml` clones each sub-repo at its pinned tag, **lifts the prebuilt `.xcframework` out of the repo root**, and re-signs it under Cambly's Apple Distribution identity (the shared `sign-xcframeworks` → `zip` → `checksums` tail is reused verbatim; `codesign --force` overwrites Zendesk's own signature with ours, which is what the ITMS-91065 SDK-signature rule requires).
+
+**Why we vendored it at all (MOB-363).** Zendesk was previously consumed as 11 **remote** SwiftPM packages. Cambly-Swift pinned only the umbrella (`ZendeskSDKMessaging` = 2.35.0); the other 10 sub-packages were transitive and floated on loose `from:` ranges, recorded only in `Package.resolved`. On 2026-06-16 an unrelated PR ran a full SwiftPM resolve, which floated `sdk_ui_components_ios` 14.3.1 → 14.4.0 while `messaging` stayed pinned at 2.35.0. Those are a matched set of **binary** xcframeworks: messaging 2.35.0 references `ZendeskSDKUIComponents.MessageFooterRenderingVM`, removed in 14.4.0, so `dyld` failed to bind the symbol and Cambly + CamblyKids crashed at launch (SIGABRT). A source package would have recompiled and stayed consistent; a binary one can't. Vendoring the **whole family behind one revision** makes the set atomic — it can no longer partially drift on a resolve. (Full writeup: Cambly-Swift `docs/postmortems/2026-06-17-zendesk-ui-components-abi-skew.md`.)
+
+- **All 11 frameworks ship + embed.** `ZendeskSDKMessaging` dyld-links the whole family at runtime (separate dynamic frameworks, **not** statically absorbed — same as the Netless / InstantSearch stacks), so the single `.library` product lists all 11 binaryTargets and every consuming app target embeds the set. Cambly-Swift's two import sites (`import ZendeskSDKMessaging`, `import ZendeskSDK`) both resolve through this one product.
+- **The pinned set = the known-good messaging 2.35.0 train** (`ui_components 14.3.1`, `http_client 0.20.1`, `storage 1.5.0`, `conversation_kit 13.2.0`, `core_utilities 7.2.0`, `faye_client 1.16.0`, `guide_kit 2.8.0`, `logger 0.11.0`, `socket_client 1.14.0`, `zendesk 3.15.0`) — behavior-identical to the pre-skew state, just frozen. The per-sub-package tags live in the Makefile's `PREBUILT_REPO_TAGS`, independent of the vendor-release `VERSION` (which only names this repo's release tag).
+- **Upgrading Zendesk** = bump the tags in `PREBUILT_REPO_TAGS` (keep the set internally consistent — use one Zendesk SDK release train) and re-run `build-zendesk.yml`. One atomic, intentional bump instead of a version float that silently desyncs the set.
+- **Git LFS.** If a sub-repo stores its xcframework via LFS, the Makefile's `git lfs pull` materializes it (macos runners have git-lfs); the build fails loudly if a lifted `.xcframework/Info.plist` is missing (LFS not materialized).
+- **`PrivacyInfo.xcprivacy` preserved.** Zendesk's xcframeworks already carry privacy manifests; `--force` re-signing replaces only the signature, not the bundle contents, so the manifests survive.
 
 More vendors may be added — see "Adding a new vendor" below. Google auth stack (`GoogleSignIn` / `GTMAppAuth` / `AppAuth` / `GTMSessionFetcher`) remains **blocked**: it's SPM-only *and* mixes ObjC with system-framework linking (GTMSessionFetcher / AppAuth → UIKit / Security / AuthenticationServices / SafariServices), which `swift-create-xcframework`'s generated xcodeproj couldn't get to compile + link simultaneously (8 iterations, reverted in `113f18b`). The InstantSearch SPM-mode pipeline above does **not** unblock it — InstantSearch is pure Swift with no system-framework linking, which is exactly why the same tool works there. The remaining small SPM-only candidates that *are* pure Swift (`BSON`, `Reusable`, `MultiSlider`, test-only `ViewInspector` / `swift-snapshot-testing` / `Mocker`) can now follow the InstantSearch `USE_SPM` pattern.
 
@@ -178,7 +191,7 @@ Each vendor has its own `workflow_dispatch` workflow in **Actions**.
 Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section, one GHA workflow. Marker comments tie everything together. Reference `build-alamofire.yml` (single-framework public upstream) or `build-facebook.yml` (multi-framework private fork) as templates.
 
 1. **`Package.swift`** — under `products:`, add a `// === <vendor-key> ===` marker line and a `.library(name: "<ProductName>", targets: [...])`. Under `targets:`, add the same marker line and N `.binaryTarget(name: ..., url: "...PENDING...", checksum: "0000…")` entries. Use 64 hex zeros as the placeholder checksum; the first workflow run patches everything to real values.
-2. **`Makefile`** — add a per-vendor `ifeq` block. Two patterns depending on upstream layout:
+2. **`Makefile`** — add a per-vendor `ifeq` block. Build-mode patterns (pick by how upstream ships):
    ```makefile
    # Pattern A — upstream xcodeproj/xcworkspace at root
    ifeq ($(VENDOR),<vendor-key>)
@@ -202,9 +215,22 @@ Each vendor is: one `.library` product, N `.binaryTarget`s, one Makefile section
      # All product names (build + extra), used by sign / zip / checksum:
      SCHEME_PRODUCT_PAIRS := "<Name>:<Name>" ...
    endif
+
+   # Pattern D — prebuilt-mode (upstream ships NO source; its SPM package is a
+   # `path:` binaryTarget over a committed .xcframework). No build — clone each
+   # sub-repo at its tag and lift the .xcframework out. See Zendesk.
+   ifeq ($(VENDOR),<vendor-key>)
+     USE_PREBUILT := 1
+     <NAME>_BASE ?= https://github.com/<org>
+     # "<repo>:<upstream-tag>:<FrameworkName>" — one per shipped framework:
+     PREBUILT_REPO_TAGS := "<repo>:<tag>:<Framework>" ...
+     # All framework names → PRODUCTS_LIST (sign/zip/checksum). The "x:" is a
+     # dummy scheme so the shared `awk -F: '{print $$2}'` yields the name:
+     SCHEME_PRODUCT_PAIRS := "x:<Framework>" ...
+   endif
    ```
    Add `<vendor-key>` to the `case` statement in `require-args`. Use quoted `"scheme:product"` tokens to handle scheme names with spaces / parens (e.g. `"Alamofire iOS:Alamofire"`, `"Lottie (iOS):Lottie"`). For Pattern C, list **all** shipped frameworks in `SCHEME_PRODUCT_PAIRS` (it only feeds `PRODUCTS_LIST` for sign/zip/checksum there); `SPM_BUILD_PRODUCTS` + `SPM_EXTRA_FRAMEWORKS` drive the actual build. If a Pattern-C package pulls swift-log, add a `patch_swiftlog.py` call (see the `USE_SPM` branch in `build-xcframeworks`).
-3. **`.github/workflows/build-<vendor>.yml`** — copy `build-alamofire.yml` (simplest template; for SPM-mode copy `build-instantsearch.yml`, which adds the swift-create-xcframework install step), change:
+3. **`.github/workflows/build-<vendor>.yml`** — copy `build-alamofire.yml` (simplest template; for SPM-mode copy `build-instantsearch.yml`, which adds the swift-create-xcframework install step; for **prebuilt-mode** copy `build-zendesk.yml`, which lifts xcframeworks from sub-repos and passes no `UPSTREAM_REPO_URL`), change:
    - `name:` and the `workflow_dispatch` description / default version
    - `VENDOR` env (used by patch script)
    - `ASSETS_TAG: <vendor-key>-${{ inputs.version }}`
