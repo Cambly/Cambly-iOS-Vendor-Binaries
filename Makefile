@@ -220,14 +220,22 @@ endif
 # patch_swiftlog.py downgrades it to `@usableFromInline`. Run after `swift
 # package resolve` materializes the checkout, before the build.
 #
-# IPHONEOS_DEPLOYMENT_TARGET=17.0 (matches CamblyVendorBinaries' .iOS(.v17)) is
-# forced via --xc-setting (NOT --xcconfig, which silently no-ops) to keep every
-# generated target's deployment target consistent — otherwise dependency targets
-# get a different floor than the root and module imports fail across them.
+# IPHONEOS_DEPLOYMENT_TARGET=14.0 (= Cambly's app min deployment) is forced via
+# --xc-setting (NOT --xcconfig, which silently no-ops) to keep every generated
+# target's deployment target consistent — otherwise dependency targets get a
+# different floor than the root and module imports fail across them.
+#
+# CRITICAL: this MUST be ≤ the app's min deployment (iOS 14), NOT 17.0. A prebuilt
+# framework bakes its IPHONEOS_DEPLOYMENT_TARGET into LC_BUILD_VERSION minos; if
+# minos (17.0) > the running OS (e.g. an iOS 16 device/sim the app still supports),
+# dyld refuses to load it at launch — "Symbol not found … built for iOS 17.0 which
+# is newer than running OS". Source-form SPM consumption never hit this because the
+# *consumer* target's deployment target governed the compile. Same rule the
+# Fastboard pipeline documents: "A framework's min ≤ the app's min is required".
 ifeq ($(VENDOR),instantsearch)
   UPSTREAM_REPO_URL ?= git@github.com:algolia/instantsearch-ios.git
   USE_SPM := 1
-  SPM_DEPLOYMENT_TARGET := 17.0
+  SPM_DEPLOYMENT_TARGET := 14.0
   # Products swift-create-xcframework BUILDS with --stack-evolution. Building the
   # top-level `InstantSearch` product leaves an archive containing the whole stack
   # (all 7 frameworks, each with a .swiftinterface). We then create every shipped
