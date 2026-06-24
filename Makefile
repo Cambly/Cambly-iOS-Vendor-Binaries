@@ -446,6 +446,26 @@ ifeq ($(USE_SPM),1)
 	     echo "  ↳ kept binary .swiftmodule in $$m/$$(basename $$slicedir)"; \
 	   done; \
 	 done
+	@# MOB-375 no-drift guard: every shipped iOS slice must bake exactly the
+	@# deployment target we asked for. A slice with a HIGHER minos than the app
+	@# supports links fine but crashes the consumer at launch on older iOS
+	@# (the InstantSearch minos-17-on-an-iOS-14-app regression). SPM-mode builds
+	@# iOS-only (--platform ios), so every slice here is iOS — no platform filter.
+	@echo "🔎 Verifying every shipped slice's minos == $(SPM_DEPLOYMENT_TARGET) (MOB-375)"
+	@bad=0; \
+	 for m in $(SPM_SHIP_FRAMEWORKS); do \
+	   for fwbin in $(ARTIFACTS_DIR)/$$m.xcframework/*/$$m.framework/$$m; do \
+	     [ -f "$$fwbin" ] || { echo "❌ missing binary: $$fwbin"; bad=1; continue; }; \
+	     slice=$$(basename $$(dirname $$(dirname "$$fwbin"))); \
+	     got=$$(otool -l "$$fwbin" | awk '$$1=="cmd"&&($$2=="LC_BUILD_VERSION"||$$2=="LC_VERSION_MIN_IPHONEOS"){f=1} f&&$$1=="minos"{print $$2;exit} f&&$$1=="version"{print $$2;exit}'); \
+	     if [ "$$got" != "$(SPM_DEPLOYMENT_TARGET)" ]; then \
+	       echo "❌ $$m [$$slice]: minos=$$got != $(SPM_DEPLOYMENT_TARGET)"; bad=1; \
+	     else \
+	       echo "  ✓ $$m [$$slice] minos=$$got"; \
+	     fi; \
+	   done; \
+	 done; \
+	 [ "$$bad" = 0 ] || { echo "❌ minos drift — a slice was built for the wrong deployment target (MOB-375). Check IPHONEOS_DEPLOYMENT_TARGET=$(SPM_DEPLOYMENT_TARGET) reached every archive."; exit 1; }
 else ifeq ($(USE_PREBUILT),1)
 	@echo "▶▶▶ prebuilt-mode vendor '$(VENDOR)': lift committed .xcframeworks from $(words $(PREBUILT_REPO_TAGS)) pinned sub-repos (no source build)"
 	@# Clone each zendesk sub-repo at its pinned tag and copy the prebuilt
