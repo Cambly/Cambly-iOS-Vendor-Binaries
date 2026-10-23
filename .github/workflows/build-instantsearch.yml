@@ -28,10 +28,12 @@ name: Build InstantSearch
 # publishes per-Xcode release assets. Each leg prints a ready-to-paste json
 # fragment for that Xcode into its release notes.
 #
-# Why macos-26: it is the only GitHub-hosted image that carries every fleet
-# Xcode (26.1.1 / 26.2 / 26.3 / 26.4.1 / 26.5). macos-15 tops out at 26.3 —
-# building there is what silently produced a 6.2.4 binary that an Xcode-26.5
-# consumer couldn't link (the original blocker).
+# Why the runner is per leg: GitHub ships each Xcode major on a different
+# image. `macos-26` carries every 26.x fleet Xcode (26.2 / 26.3 / 26.4.1 /
+# 26.5) and will never get 27; Xcode 27.x lives only on the `xcode-27` label
+# (macOS 27 base). macos-15 tops out at 26.3 — building there is what silently
+# produced a 6.2.4 binary that an Xcode-26.5 consumer couldn't link (the
+# original blocker).
 #
 # SPM-mode build (USE_SPM=1 in the Makefile): instantsearch-ios is pure SwiftPM
 # with no framework-producing xcodeproj, so the Makefile builds it via
@@ -70,7 +72,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: ${{ matrix.runner }}
     strategy:
       # Don't let one Xcode's failure cancel the others — we want to see which
       # slices succeed, and a partial set is still publishable.
@@ -79,7 +81,7 @@ jobs:
         # Every Xcode the fleet uses. Keep in sync with the keys in
         # Cambly-Swift's LocalPackages/InstantSearchBinary/instantsearch-binaries.json.
         # Values must match the /Applications/Xcode_<value>.app names on the
-        # macos-26 image.
+        # leg's runner image.
         #
         # 26.1.1 is intentionally NOT here: macos-26 ships the Xcode 26.1.1 app
         # but WITHOUT its iOS device SDK component (GitHub trims older Xcodes'
@@ -87,7 +89,19 @@ jobs:
         # with "iOS 26.1 is not installed". The fleet floor is 26.2 (pin history
         # is 26.4.1 → 26.5), so dropping it is safe. If a 26.1.x slice is ever
         # needed, add a `sudo xcodebuild -downloadPlatform iOS` step for that leg.
-        xcode: ["26.2", "26.3", "26.4.1", "26.5"]
+        #
+        # deployment_target: Xcode 27 refuses any target below iOS 15 ("the
+        # range of supported deployment target versions is 15.0 to 27.x"), so
+        # the 27.x slices are built at 15.0. The 26.x slices stay at 14.0, the
+        # Cambly app floor on those toolchains -- a slice's minos must be <= the
+        # consuming app's floor or dyld refuses to load it (see the Makefile's
+        # SPM_DEPLOYMENT_TARGET block). A 27.x consumer is itself at 15+.
+        include:
+          - { xcode: "26.2", runner: macos-26, deployment_target: "14.0" }
+          - { xcode: "26.3", runner: macos-26, deployment_target: "14.0" }
+          - { xcode: "26.4.1", runner: macos-26, deployment_target: "14.0" }
+          - { xcode: "26.5", runner: macos-26, deployment_target: "14.0" }
+          - { xcode: "27.1", runner: xcode-27, deployment_target: "15.0" }
     steps:
       - name: Checkout binary repo (this)
         uses: actions/checkout@v4
@@ -131,6 +145,7 @@ jobs:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
         run: |
           make all VENDOR=instantsearch VERSION=${{ inputs.version }} \
+            SPM_DEPLOYMENT_TARGET=${{ matrix.deployment_target }} \
             UPSTREAM_REPO_URL=https://github.com/algolia/instantsearch-ios.git
 
       - name: Emit per-Xcode json fragment for the consumer
@@ -168,7 +183,7 @@ jobs:
           gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || true
           notes_file=$(mktemp)
           {
-            echo "Prebuilt xcframeworks for algolia/instantsearch-ios@${{ inputs.version }} built with **Xcode ${{ matrix.xcode }}**."
+            echo "Prebuilt xcframeworks for algolia/instantsearch-ios@${{ inputs.version }} built with **Xcode ${{ matrix.xcode }}** at IPHONEOS_DEPLOYMENT_TARGET ${{ matrix.deployment_target }}."
             echo ""
             echo "7 frameworks: InstantSearch / InstantSearchCore / AlgoliaSearchClient / InstantSearchInsights / InstantSearchTelemetry / Logging / SwiftProtobuf. All must be embedded by each consuming app target. Built SPM-mode via lonepalm/swift-create-xcframework@${{ inputs.tool_ref }} with library evolution (swift-log patched, see .github/scripts/patch_swiftlog.py; vendored SwiftProtobuf shipped as a Modules-stripped plain dylib — see .github/scripts/postprocess_instantsearch.py). Each framework ships its binary .swiftmodule (per-Xcode), so consumers load it directly instead of recompiling the .swiftinterface."
             echo ""

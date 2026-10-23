@@ -235,7 +235,9 @@ endif
 ifeq ($(VENDOR),instantsearch)
   UPSTREAM_REPO_URL ?= git@github.com:algolia/instantsearch-ios.git
   USE_SPM := 1
-  SPM_DEPLOYMENT_TARGET := 14.0
+  # Overridable per leg: build-instantsearch.yml passes 15.0 for Xcode 27.x,
+  # which rejects anything lower.
+  SPM_DEPLOYMENT_TARGET ?= 14.0
   # Products swift-create-xcframework BUILDS with --stack-evolution. Building the
   # top-level `InstantSearch` product leaves an archive containing the whole stack
   # (all 7 frameworks, each with a .swiftinterface). We then create every shipped
